@@ -216,10 +216,6 @@ function openDatePicker() {
     reader.readAsDataURL(file)
   }
 
-  async function deleteProfileImage() {
-    await db.settings.delete(PROFILE_IMAGE_KEY)
-  }
-
   // 기상시간 / 취침시간을 날짜별 기록으로 저장
   async function updateDailyRecord(patch: Partial<DailyRecord>) {
     const previous = await db.records.get(selectedDate)
@@ -897,7 +893,6 @@ function TodoPanel({
                   <TodoItem
                     key={task.id}
                     task={task}
-                    category={category}
                     theme={theme}
                     onCycleStatus={onCycleStatus}
                     onEditTask={onEditTask}
@@ -919,7 +914,6 @@ function TodoPanel({
                   key={task.id}
                   task={task}
                   theme={theme}
-                  category={{ name: '삭제된 카테고리', color: '#d1d5db' }}
                   onCycleStatus={onCycleStatus}
                   onEditTask={onEditTask}
                   onDeleteTask={onDeleteTask}
@@ -935,7 +929,6 @@ function TodoPanel({
 
 type TodoItemProps = {
   task: PlannerTask
-  category: Category
   theme: ThemeColors
   onCycleStatus: (task: PlannerTask) => void
   onEditTask: (task: PlannerTask) => void
@@ -944,7 +937,6 @@ type TodoItemProps = {
 
 function TodoItem({
   task,
-  category,
   theme,
   onCycleStatus,
   onEditTask,
