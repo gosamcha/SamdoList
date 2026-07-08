@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Menu, Pencil, Trash2, X } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import clsx from 'clsx'
@@ -28,7 +28,7 @@ type RecordSet = {
   next?: DailyRecord
 }
 
-const HOUR_HEIGHT = 53
+const HOUR_HEIGHT = 48
 
 // 앱 전체에서 쓰는 테마 색상 타입
 type ThemeColors = {
@@ -56,6 +56,9 @@ const THEME_SETTING_KEYS = {
   statusDone: 'theme.statusDone',
   statusPartial: 'theme.statusPartial',
 } as const
+
+// 상단 카드 왼쪽에 표시할 이미지 저장 key
+const PROFILE_IMAGE_KEY = 'profile.image'
 
 // 00시 ~ 23시
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) =>
@@ -93,6 +96,24 @@ function App() {
   const [showTodoTab, setShowTodoTab] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const [draft, setDraft] = useState<TaskDraft | null>(null)
+  const dateInputRef = useRef<HTMLInputElement>(null)
+
+// yyyy-mm-dd 형태를 07/09 형태로 바꿈
+const displayDate = useMemo(() => {
+  return selectedDate.slice(5).replace('-', '/')
+}, [selectedDate])
+
+function openDatePicker() {
+  const picker = dateInputRef.current as HTMLInputElement & {
+    showPicker?: () => void
+  }
+
+  if (picker?.showPicker) {
+    picker.showPicker()
+  } else {
+    picker?.click()
+  }
+}
 
   useEffect(() => {
     void seedInitialData()
@@ -139,6 +160,13 @@ function App() {
       }
     }, []) ?? DEFAULT_THEME
 
+  // IndexedDB settings에서 상단 프로필 이미지를 불러옴
+  const profileImage =
+    useLiveQuery(async () => {
+      const result = await db.settings.get(PROFILE_IMAGE_KEY)
+      return result?.value ?? ''
+    }, []) ?? ''
+
   const records: RecordSet =
     useLiveQuery(async () => {
       const prevDate = addDays(selectedDate, -1)
@@ -166,6 +194,31 @@ function App() {
   }, [tasks])
 
   const currentRecord = records.current
+
+  async function saveProfileImage(file?: File) {
+    if (!file) return
+
+    if (!file.type.startsWith('image/')) {
+      alert('이미지 파일만 업로드할 수 있음.')
+      return
+    }
+
+    const reader = new FileReader()
+
+    reader.onload = async () => {
+      await db.settings.put({
+        key: PROFILE_IMAGE_KEY,
+        value: String(reader.result),
+      })
+    }
+
+    // 이미지를 base64 문자열로 바꿔서 IndexedDB에 저장
+    reader.readAsDataURL(file)
+  }
+
+  async function deleteProfileImage() {
+    await db.settings.delete(PROFILE_IMAGE_KEY)
+  }
 
   // 기상시간 / 취침시간을 날짜별 기록으로 저장
   async function updateDailyRecord(patch: Partial<DailyRecord>) {
@@ -260,19 +313,38 @@ function App() {
     <main className="min-h-screen bg-neutral-100">
       <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/95 px-3 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-2">
-          <input
-            type="date"
-            value={selectedDate}
-            onChange={(event) => setSelectedDate(event.target.value)}
-            className="min-w-0 flex-1 rounded-xl border border-neutral-200 px-3 py-2 text-lg font-bold"
-          />
+          <div className="min-w-0 flex-1 pl-6">
+            <button
+              type="button"
+              onClick={openDatePicker}
+              className="bg-transparent p-0"
+              style={{
+                color: theme.primaryBg,
+                fontSize: '40px', // 날짜 크기
+                fontWeight: 1000,  // 매우 굵게
+                lineHeight: 1,
+                letterSpacing: '-0.04em',
+              }}
+            >
+              {displayDate}
+            </button>
+
+            {/* 실제 날짜 선택용 input은 숨김 */}
+            <input
+              ref={dateInputRef}
+              type="date"
+              value={selectedDate}
+              onChange={(event) => setSelectedDate(event.target.value)}
+              className="sr-only" 
+            />
+          </div>
 
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
             className="rounded-xl border border-neutral-200 px-3 py-2 text-xs text-neutral-600"
           >
-            시작 {dayStart}
+            dayStart {dayStart}
           </button>
 
           <button
@@ -287,48 +359,82 @@ function App() {
       </header>
 
       <section className="mx-auto max-w-6xl px-3 py-3">
-        <div className="rounded-2xl border border-neutral-200 bg-white p-3">
-          <div className="mb-3">
-            <div className="mb-1 flex items-center justify-between text-sm">
-              <span className="font-semibold">일정 달성률</span>
-              <span className="font-bold">{completionRate}%</span>
+        <div className="rounded-3xl border border-neutral-200 bg-white p-3">
+          <div className="flex gap-3">
+            {/* 왼쪽 이미지 영역 */}
+            <div className="shrink-0">
+              <label className="grid h-24 w-24 cursor-pointer place-items-center overflow-hidden rounded-2xl border border-white bg-white text-center text-xs font-bold text-neutral-400">
+                {profileImage ? (
+                  <img
+                    src={profileImage}
+                    alt="사용자 이미지"
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span>
+                    사진
+                    <br />
+                    추가
+                  </span>
+                )}
+
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={(event) => {
+                    void saveProfileImage(event.target.files?.[0])
+                    event.currentTarget.value = ''
+                  }}
+                />
+              </label>
             </div>
 
-            <div className="h-3 overflow-hidden rounded-full bg-neutral-200">
-              <div
-                className="h-full rounded-full transition-all"
-                style={{
-                  width: `${completionRate}%`,
-                  backgroundColor: theme.primaryBg,
-                }}
-              />
+            {/* 오른쪽 정보 영역 */}
+            <div className="min-w-0 flex-1">
+              <div className="mb-3">
+                <div className="mb-1 flex items-center justify-between text-sm">
+                  <span className="font-black">Progress Bar</span>
+                  <span className="text-lg font-black">{completionRate}%</span>
+                </div>
+
+                <div className="h-3 overflow-hidden rounded-full bg-neutral-200">
+                  <div
+                    className="h-full rounded-full transition-all"
+                    style={{
+                      width: `${completionRate}%`,
+                      backgroundColor: theme.primaryBg,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-sm font-black">
+                  wake-up
+                  <TimeSelect
+                    value={currentRecord?.wakeTime ?? ''}
+                    onChange={(value) =>
+                      updateDailyRecord({
+                        wakeTime: value,
+                      })
+                    }
+                  />
+                </label>
+
+                <label className="text-sm font-black">
+                  sleep
+                  <TimeSelect
+                    value={currentRecord?.sleepTime ?? ''}
+                    onChange={(value) =>
+                      updateDailyRecord({
+                        sleepTime: value,
+                      })
+                    }
+                  />
+                </label>
+              </div>
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <label className="text-sm font-semibold">
-              기상시간
-              <TimeSelect
-                value={currentRecord?.wakeTime ?? ''}
-                onChange={(value) =>
-                  updateDailyRecord({
-                    wakeTime: value || undefined,
-                  })
-                }
-              />
-            </label>
-
-            <label className="text-sm font-semibold">
-              취침시간
-              <TimeSelect
-                value={currentRecord?.sleepTime ?? ''}
-                onChange={(value) =>
-                  updateDailyRecord({
-                    sleepTime: value || undefined,
-                  })
-                }
-              />
-            </label>
           </div>
         </div>
 
@@ -337,46 +443,46 @@ function App() {
             type="button"
             onClick={() => setShowTimeTab((prev) => !prev)}
             className={clsx(
-              'flex-1 rounded-xl border px-3 py-2 text-sm font-bold',
+              'flex-1 rounded-2xl border px-3 py-3 tracking-[0.06em]',
               !showTimeTab && 'border-neutral-200 bg-white text-neutral-500',
             )}
-            style={
-              showTimeTab
-                ? {
-                    borderColor: theme.primaryBg,
-                    backgroundColor: theme.primaryBg,
-                    color: theme.primaryText,
-                  }
-                : undefined
-            }
+            style={{
+              borderColor: showTimeTab ? theme.primaryBg : undefined,
+              backgroundColor: showTimeTab ? theme.primaryBg : undefined,
+              color: showTimeTab ? theme.primaryText : undefined,
+
+              // 폰트 강제 적용
+              fontSize: '15px',
+              fontWeight: 900,
+            }}
           >
-            TIME TAB {showTimeTab}
+            TIME TAB
           </button>
 
           <button
             type="button"
             onClick={() => setShowTodoTab((prev) => !prev)}
             className={clsx(
-              'flex-1 rounded-xl border px-3 py-2 text-sm font-bold',
+              'flex-1 rounded-2xl border px-3 py-3 tracking-[0.06em]',
               !showTodoTab && 'border-neutral-200 bg-white text-neutral-500',
             )}
-            style={
-              showTodoTab
-                ? {
-                    borderColor: theme.primaryBg,
-                    backgroundColor: theme.primaryBg,
-                    color: theme.primaryText,
-                  }
-                : undefined
-            }
+            style={{
+              borderColor: showTodoTab ? theme.primaryBg : undefined,
+              backgroundColor: showTodoTab ? theme.primaryBg : undefined,
+              color: showTodoTab ? theme.primaryText : undefined,
+
+              // 폰트 강제 적용
+              fontSize: '15px',
+              fontWeight: 900,
+            }}
           >
-            TODO TAB {showTodoTab}
+            TODO TAB
           </button>
         </div>
 
         {visibleTabCount === 0 ? (
           <div className="mt-3 rounded-2xl border border-dashed border-neutral-300 bg-white p-8 text-center text-sm text-neutral-500">
-            켜진 탭이 없음
+            No tabs turned on
           </div>
         ) : (
           <div
@@ -630,11 +736,11 @@ function TimePanel({
                   height: HOUR_HEIGHT,
                 }}
               >
-                <div className="absolute left-0 top-1 w-9 text-right text-xs font-bold text-neutral-400">
+                <div className="absolute left-0 top-1 w-6 text-right text-sm font-black text-neutral-400">
                   {label.slice(0, 2)}
                 </div>
 
-                <div className="ml-11 grid h-full grid-cols-6">
+                <div className="ml-7 grid h-full grid-cols-6">
                   {Array.from({ length: 6 }).map((__, cellIndex) => (
                     <div
                       key={cellIndex}
@@ -649,7 +755,7 @@ function TimePanel({
           {sleepBlocks.map((block, index) => (
             <div
               key={index}
-              className="pointer-events-none absolute left-11 right-0 z-0"
+              className="pointer-events-none absolute left-7 right-0 z-0"
               style={{
                 top: block.hourIndex * HOUR_HEIGHT,
                 height: HOUR_HEIGHT,
@@ -681,7 +787,7 @@ function TimePanel({
               // left-12는 왼쪽 시간 숫자 칸을 피하려고 둔 여백
               <div
                 key={`${task.id}-${blockIndex}-${hourIndex}`}
-                className="absolute left-12 right-2"
+                className="absolute left-8 right-2"
                 style={{
                   top,
                   height: HOUR_HEIGHT,
@@ -760,33 +866,30 @@ function TodoPanel({
       <div className="max-h-[72vh] overflow-auto p-3">
         {categories.length === 0 && (
           <div className="rounded-xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">
-            카테고리가 없음. 메뉴에서 카테고리를 먼저 추가해야 함.
+            empty category
           </div>
         )}
 
         {grouped.map(({ category, tasks }) => (
-          <div key={category.id} className="mb-5">
+          <div key={category.id} className="mb-3">
             {/* 카테고리 이름을 누르면 해당 카테고리로 새 투두 생성 */}
             <button
               type="button"
               onClick={() => onCreateTask(category)}
-              className="mb-2 flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left hover:bg-neutral-100"
+              className="mb-1 flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left hover:bg-neutral-100"
             >
               <span
                 className="h-3 w-3 rounded-full"
                 style={{ backgroundColor: category.color }}
               />
 
-              <span className="text-lg font-black">{category.name}</span>
+              <span className="text-base font-black">{category.name}</span>
 
-              <span className="ml-auto rounded-full bg-neutral-100 px-2 py-1 text-xs font-bold text-neutral-500">
-                + 추가
-              </span>
             </button>
 
             {tasks.length === 0 ? (
               <div className="rounded-xl border border-dashed border-neutral-200 p-4 text-sm text-neutral-400">
-                아직 할 일이 없음
+                empty
               </div>
             ) : (
               <div className="divide-y divide-neutral-200">
@@ -862,7 +965,7 @@ function TodoItem({
       <button
         type="button"
         onClick={() => onCycleStatus(task)}
-        className="grid h-10 w-10 shrink-0 place-items-center rounded-xl border-2 text-sm font-black"
+        className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border-2 text-sm font-black"
         style={{
           borderColor: statusColor,
           color: statusColor,
@@ -874,7 +977,7 @@ function TodoItem({
       <div className="min-w-0 flex-1">
         <div
           className={clsx(
-            'truncate text-base font-black',
+            'truncate text-sm font-bold leading-tight',
             task.status === 'partial' && 'text-neutral-400',
           )}
         >
@@ -882,7 +985,7 @@ function TodoItem({
         </div>
 
         {task.startTime && task.endTime && (
-          <div className="text-sm font-semibold text-neutral-400">
+          <div className="text-xs font-semibold text-neutral-400">
             {task.startTime} - {task.endTime}
           </div>
         )}
@@ -891,7 +994,7 @@ function TodoItem({
       <button
         type="button"
         onClick={() => onEditTask(task)}
-        className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100"
+        className="ml-auto rounded-lg p-2 text-neutral-400 hover:bg-neutral-100"
         aria-label="수정"
       >
         <Pencil size={17} />
@@ -906,10 +1009,6 @@ function TodoItem({
         <Trash2 size={17} />
       </button>
 
-      <span
-        className="h-3 w-3 shrink-0 rounded-full"
-        style={{ backgroundColor: category.color }}
-      />
     </div>
   )
 }
@@ -1096,16 +1195,12 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
               onChange={updateDayStart}
             />
           </label>
-
-          <p className="mt-2 text-xs leading-relaxed text-neutral-500">
-            시간 탭은 이 시간을 기준으로 24시간을 보여줌.
-          </p>
         </CollapsibleSection>
 
         <CollapsibleSection title="메인 테마 색상">
           <div className="space-y-3">
             <ColorSetting
-              label="버튼 / Progress bar 색"
+              label="Button Background"
               value={theme.primaryBg}
               onChange={(value) =>
                 updateThemeColor(THEME_SETTING_KEYS.primaryBg, value)
@@ -1113,7 +1208,7 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
             />
 
             <ColorSetting
-              label="버튼 글자 색"
+              label="Button Text"
               value={theme.primaryText}
               onChange={(value) =>
                 updateThemeColor(THEME_SETTING_KEYS.primaryText, value)
@@ -1121,7 +1216,7 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
             />
 
             <ColorSetting
-              label="빈 체크박스 색"
+              label="Check Box"
               value={theme.statusTodo}
               onChange={(value) =>
                 updateThemeColor(THEME_SETTING_KEYS.statusTodo, value)
@@ -1129,7 +1224,7 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
             />
 
             <ColorSetting
-              label="O 색"
+              label="Check O"
               value={theme.statusDone}
               onChange={(value) =>
                 updateThemeColor(THEME_SETTING_KEYS.statusDone, value)
@@ -1137,7 +1232,7 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
             />
 
             <ColorSetting
-              label="△ 색"
+              label="Check △"
               value={theme.statusPartial}
               onChange={(value) =>
                 updateThemeColor(THEME_SETTING_KEYS.statusPartial, value)
@@ -1146,7 +1241,7 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="카테고리 관리"  defaultOpen>
+        <CollapsibleSection title="카테고리 관리">
           <div className="mb-3 grid grid-cols-[1fr_52px] gap-2">
             <input
               value={newCategoryName}
@@ -1269,7 +1364,7 @@ function TimeSelect({ value, onChange }: TimeSelectProps) {
         ))}
       </select>
 
-      <span className="text-sm font-bold text-neutral-500">시</span>
+      <span className="text-sm font-bold text-neutral-500">:</span>
 
       <select
         value={minute}
@@ -1283,7 +1378,6 @@ function TimeSelect({ value, onChange }: TimeSelectProps) {
         ))}
       </select>
 
-      <span className="text-sm font-bold text-neutral-500">분</span>
     </div>
   )
 }
