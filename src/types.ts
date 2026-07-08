@@ -13,6 +13,7 @@ export interface PlannerTask {
   title: string
   startTime?: string
   endTime?: string
+  memo?: string // 간단 메모
   status: TaskStatus
   createdAt: number
 }

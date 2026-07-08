@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Menu, Pencil, Trash2, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import clsx from 'clsx'
 import { db, seedInitialData } from './db'
@@ -20,6 +20,8 @@ type TaskDraft = {
   title: string
   startTime: string
   endTime: string
+  hideTime: boolean // 시간 탭에 표시하지 않을지
+  memo: string
 }
 
 type RecordSet = {
@@ -28,7 +30,7 @@ type RecordSet = {
   next?: DailyRecord
 }
 
-const HOUR_HEIGHT = 48
+const HOUR_HEIGHT = 42
 
 // 앱 전체에서 쓰는 테마 색상 타입
 type ThemeColors = {
@@ -103,16 +105,8 @@ const displayDate = useMemo(() => {
   return selectedDate.slice(5).replace('-', '/')
 }, [selectedDate])
 
-function openDatePicker() {
-  const picker = dateInputRef.current as HTMLInputElement & {
-    showPicker?: () => void
-  }
-
-  if (picker?.showPicker) {
-    picker.showPicker()
-  } else {
-    picker?.click()
-  }
+function moveDate(amount: number) {
+  setSelectedDate((prevDate) => addDays(prevDate, amount))
 }
 
   useEffect(() => {
@@ -232,13 +226,15 @@ function openDatePicker() {
     const title = draft.title.trim()
     if (!title) return
 
-    const startTime = draft.startTime
-    const endTime = draft.endTime
+    const startTime = draft.hideTime ? undefined : draft.startTime
+    const endTime = draft.hideTime ? undefined : draft.endTime
 
-    if (startTime === endTime) {
+    if (!draft.hideTime && startTime === endTime) {
       alert('시작 시간과 종료 시간이 같을 수 없음.')
       return
     }
+
+    const memo = draft.memo.trim().slice(0, 300)
 
     if (draft.editingId) {
       await db.tasks.update(draft.editingId, {
@@ -246,6 +242,7 @@ function openDatePicker() {
         title,
         startTime,
         endTime,
+        memo,
       })
     } else {
       await db.tasks.add({
@@ -254,6 +251,7 @@ function openDatePicker() {
         title,
         startTime,
         endTime,
+        memo,
         status: 'todo',
         createdAt: Date.now(),
       })
@@ -262,14 +260,23 @@ function openDatePicker() {
     setDraft(null)
   }
 
+  async function deleteDraftTask() {
+    if (!draft?.editingId) {
+      setDraft(null)
+      return
+    }
+
+    const ok = window.confirm('해당 할 일은 영구적으로 삭제됩니다.')
+    if (!ok) return
+
+    await db.tasks.delete(draft.editingId)
+    setDraft(null)
+  }
+
   function openNewTask(category: Category) {
     if (!category.id) return
 
-    // 새 투두를 만들 때 시작 시간은 현재 시간 기준
-    // 5분 단위로 내림 처리
     const startTime = getCurrentFiveMinuteTime()
-
-    // 종료 시간은 기본적으로 시작 시간 + 30분
     const endTime = addMinutesToTime(startTime, 30)
 
     setDraft({
@@ -277,6 +284,8 @@ function openDatePicker() {
       title: '',
       startTime,
       endTime,
+      hideTime: false,
+      memo: '',
     })
   }
 
@@ -285,14 +294,11 @@ function openDatePicker() {
       editingId: task.id,
       categoryId: task.categoryId,
       title: task.title,
-      startTime: task.startTime ?? '',
-      endTime: task.endTime ?? '',
+      startTime: task.startTime ?? getCurrentFiveMinuteTime(),
+      endTime: task.endTime ?? addMinutesToTime(getCurrentFiveMinuteTime(), 30),
+      hideTime: !(task.startTime && task.endTime),
+      memo: task.memo ?? '',
     })
-  }
-
-  async function deleteTask(taskId?: number) {
-    if (!taskId) return
-    await db.tasks.delete(taskId)
   }
 
   async function cycleTaskStatus(task: PlannerTask) {
@@ -309,30 +315,57 @@ function openDatePicker() {
     <main className="min-h-screen bg-neutral-100">
       <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/95 px-3 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-2">
-          <div className="min-w-0 flex-1 pl-6">
+          <div className="flex min-w-0 flex-1 items-center gap-1 pl-6">
+            {/* 전날 이동 */}
             <button
               type="button"
-              onClick={openDatePicker}
-              className="bg-transparent p-0"
-              style={{
-                color: theme.primaryBg,
-                fontSize: '40px', // 날짜 크기
-                fontWeight: 1000,  // 매우 굵게
-                lineHeight: 1,
-                letterSpacing: '-0.04em',
-              }}
+              onClick={() => moveDate(-1)}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-neutral-400 hover:bg-neutral-100"
+              aria-label="전날"
             >
-              {displayDate}
+              <ChevronLeft size={24} strokeWidth={3} />
             </button>
 
-            {/* 실제 날짜 선택용 input은 숨김 */}
-            <input
-              ref={dateInputRef}
-              type="date"
-              value={selectedDate}
-              onChange={(event) => setSelectedDate(event.target.value)}
-              className="sr-only" 
-            />
+            {/* 날짜 표시 + 실제 date input */}
+            <div className="relative">
+              <button
+                type="button"
+                className="bg-transparent p-0"
+                style={{
+                  color: theme.primaryBg,
+                  fontSize: '40px',
+                  fontWeight: 900,
+                  lineHeight: 1,
+                  letterSpacing: '-0.04em',
+                }}
+              >
+                {displayDate}
+              </button>
+
+              {/* 
+                iOS에서는 숨긴 input을 JS로 여는 게 잘 안 될 수 있어서,
+                투명한 date input을 날짜 글자 위에 덮어둠.
+                날짜 글자를 누르면 실제 input을 누르는 구조임.
+              */}
+              <input
+                ref={dateInputRef}
+                type="date"
+                value={selectedDate}
+                onChange={(event) => setSelectedDate(event.target.value)}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                aria-label="날짜 선택"
+              />
+            </div>
+
+            {/* 다음날 이동 */}
+            <button
+              type="button"
+              onClick={() => moveDate(1)}
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-neutral-400 hover:bg-neutral-100"
+              aria-label="다음날"
+            >
+              <ChevronRight size={24} strokeWidth={3} />
+            </button>
           </div>
 
           <button
@@ -340,7 +373,7 @@ function openDatePicker() {
             onClick={() => setMenuOpen(true)}
             className="rounded-xl border border-neutral-200 px-3 py-2 text-xs text-neutral-600"
           >
-            dayStart {dayStart}
+            DayStart {dayStart}
           </button>
 
           <button
@@ -407,7 +440,7 @@ function openDatePicker() {
 
               <div className="grid grid-cols-2 gap-2">
                 <label className="text-sm font-black">
-                  wake-up
+                  Wake-Up
                   <TimeSelect
                     value={currentRecord?.wakeTime ?? ''}
                     onChange={(value) =>
@@ -419,7 +452,7 @@ function openDatePicker() {
                 </label>
 
                 <label className="text-sm font-black">
-                  sleep
+                  Sleep
                   <TimeSelect
                     value={currentRecord?.sleepTime ?? ''}
                     onChange={(value) =>
@@ -504,7 +537,6 @@ function openDatePicker() {
                 theme={theme}
                 onCreateTask={openNewTask}
                 onEditTask={openEditTask}
-                onDeleteTask={deleteTask}
                 onCycleStatus={cycleTaskStatus}
               />
             )}
@@ -524,11 +556,11 @@ function openDatePicker() {
       {draft && (
         <TaskModal
           draft={draft}
-          categories={categories}
           theme={theme}
           onChange={setDraft}
           onClose={() => setDraft(null)}
           onSave={saveTask}
+          onDelete={deleteDraftTask}
         />
       )}
     </main>
@@ -832,7 +864,6 @@ type TodoPanelProps = {
   theme: ThemeColors
   onCreateTask: (category: Category) => void
   onEditTask: (task: PlannerTask) => void
-  onDeleteTask: (taskId?: number) => void
   onCycleStatus: (task: PlannerTask) => void
 }
 
@@ -842,7 +873,6 @@ function TodoPanel({
   theme,
   onCreateTask,
   onEditTask,
-  onDeleteTask,
   onCycleStatus,
 }: TodoPanelProps) {
   // 모든 카테고리를 기본으로 보여줌
@@ -896,7 +926,6 @@ function TodoPanel({
                     theme={theme}
                     onCycleStatus={onCycleStatus}
                     onEditTask={onEditTask}
-                    onDeleteTask={onDeleteTask}
                   />
                 ))}
               </div>
@@ -916,7 +945,6 @@ function TodoPanel({
                   theme={theme}
                   onCycleStatus={onCycleStatus}
                   onEditTask={onEditTask}
-                  onDeleteTask={onDeleteTask}
                 />
               ))}
             </div>
@@ -932,7 +960,6 @@ type TodoItemProps = {
   theme: ThemeColors
   onCycleStatus: (task: PlannerTask) => void
   onEditTask: (task: PlannerTask) => void
-  onDeleteTask: (taskId?: number) => void
 }
 
 function TodoItem({
@@ -940,20 +967,21 @@ function TodoItem({
   theme,
   onCycleStatus,
   onEditTask,
-  onDeleteTask,
 }: TodoItemProps) {
   const statusText = task.status === 'done' ? 'O' : task.status === 'partial' ? '△' : ''
 
-  // 현재 상태에 따라 체크박스 색상 결정
   const statusColor =
     task.status === 'done'
       ? theme.statusDone
       : task.status === 'partial'
         ? theme.statusPartial
         : theme.statusTodo
-  
+
+  const hasTime = Boolean(task.startTime && task.endTime)
+
   return (
-    <div className="flex items-center gap-2 py-3">
+    <div className="flex items-center gap-2 py-2">
+      {/* 체크박스만 상태 변경 담당 */}
       <button
         type="button"
         onClick={() => onCycleStatus(task)}
@@ -966,61 +994,63 @@ function TodoItem({
         {statusText}
       </button>
 
-      <div className="min-w-0 flex-1">
+      {/* 체크박스를 제외한 투두 영역을 누르면 수정 팝업 */}
+      <button
+        type="button"
+        onClick={() => onEditTask(task)}
+        className="min-w-0 flex-1 rounded-xl px-2 py-1 text-left hover:bg-neutral-100"
+      >
         <div
           className={clsx(
             'truncate text-sm font-bold leading-tight',
-            task.status === 'partial' && 'text-neutral-400',
+            task.status === 'partial' && 'text-neutral-600',
           )}
         >
           {task.title}
         </div>
 
-        {task.startTime && task.endTime && (
-          <div className="text-xs font-semibold text-neutral-400">
+        {hasTime && (
+          <div className="mt-0.5 text-xs font-semibold text-neutral-400">
             {task.startTime} - {task.endTime}
           </div>
         )}
-      </div>
-
-      <button
-        type="button"
-        onClick={() => onEditTask(task)}
-        className="ml-auto rounded-lg p-2 text-neutral-400 hover:bg-neutral-100"
-        aria-label="수정"
-      >
-        <Pencil size={17} />
       </button>
-
-      <button
-        type="button"
-        onClick={() => onDeleteTask(task.id)}
-        className="rounded-lg p-2 text-neutral-400 hover:bg-neutral-100"
-        aria-label="삭제"
-      >
-        <Trash2 size={17} />
-      </button>
-
     </div>
   )
 }
 
 type TaskModalProps = {
   draft: TaskDraft
-  categories: Category[]
   theme: ThemeColors
   onChange: (draft: TaskDraft) => void
   onClose: () => void
   onSave: () => void
+  onDelete: () => void
 }
 
-function TaskModal({ draft, categories, theme, onChange, onClose, onSave }: TaskModalProps) {
+function TaskModal({
+  draft,
+  theme,
+  onChange,
+  onClose,
+  onSave,
+  onDelete,
+}: TaskModalProps) {
+  const memoLength = draft.memo.length
+
   return (
-    <div className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4">
-      <div className="w-full max-w-md rounded-2xl bg-white p-4 shadow-xl">
+    // 검은 여백을 누르면 취소
+    <div
+      className="fixed inset-0 z-40 grid place-items-center bg-black/30 p-4"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-3xl bg-white p-4 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-black">
-            {draft.editingId ? '할 일 수정' : '할 일 추가'}
+            {draft.editingId ? 'Edit TO-DO' : 'Add TO-DO'}
           </h2>
 
           <button
@@ -1032,29 +1062,9 @@ function TaskModal({ draft, categories, theme, onChange, onClose, onSave }: Task
           </button>
         </div>
 
-        <div className="space-y-3">
+        <div className="space-y-4">
           <label className="block text-sm font-bold">
-            카테고리
-            <select
-              value={draft.categoryId}
-              onChange={(event) =>
-                onChange({
-                  ...draft,
-                  categoryId: Number(event.target.value),
-                })
-              }
-              className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2"
-            >
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block text-sm font-bold">
-            할 일 이름
+            What TO-DO
             <input
               value={draft.title}
               onChange={(event) =>
@@ -1063,54 +1073,100 @@ function TaskModal({ draft, categories, theme, onChange, onClose, onSave }: Task
                   title: event.target.value,
                 })
               }
-              placeholder="예: 보고서 작성 25페이지"
+              placeholder="e.g. Report Writing "
               className="mt-1 w-full rounded-xl border border-neutral-200 px-3 py-2"
             />
           </label>
 
-          <div className="grid grid-cols-2 gap-2">
-            <label className="block text-sm font-bold">
-              시작 시간
-              <TimeSelect
-                value={draft.startTime}
-                onChange={(value) =>
-                  onChange({
-                    ...draft,
-                    startTime: value,
-                  })
-                }
-              />
-            </label>
+          <div
+            className={draft.hideTime ? 'opacity-45' : ''}
+          >
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block text-sm font-bold">
+                START
+                <TimeSelect
+                  value={draft.startTime}
+                  disabled={draft.hideTime}
+                  onChange={(value) =>
+                    onChange({
+                      ...draft,
+                      startTime: value,
+                    })
+                  }
+                />
+              </label>
 
-            <label className="block text-sm font-bold">
-              종료 시간
-              <TimeSelect
-                value={draft.endTime}
-                onChange={(value) =>
-                  onChange({
-                    ...draft,
-                    endTime: value,
-                  })
-                }
-              />
-            </label>
+              <label className="block text-sm font-bold">
+                END
+                <TimeSelect
+                  value={draft.endTime}
+                  disabled={draft.hideTime}
+                  onChange={(value) =>
+                    onChange({
+                      ...draft,
+                      endTime: value,
+                    })
+                  }
+                />
+              </label>
+            </div>
           </div>
 
-          <p className="text-xs leading-relaxed text-neutral-500">
-            할 일 이름만 입력하면 투두리스트에만 생성되고, 시작/종료 시간을 같이 입력하면 시간 탭에도 표시됨.
-          </p>
+          <label className="flex items-center gap-2 text-sm font-bold text-neutral-600">
+            <input
+              type="checkbox"
+              checked={draft.hideTime}
+              onChange={(event) =>
+                onChange({
+                  ...draft,
+                  hideTime: event.target.checked,
+                })
+              }
+              className="h-4 w-4"
+            />
+            No Time
+          </label>
 
-          <button
-            type="button"
-            onClick={onSave}
-            className="w-full rounded-xl px-4 py-3 font-black"
-            style={{
-              backgroundColor: theme.primaryBg,
-              color: theme.primaryText,
-            }}
-          >
-            저장
-          </button>
+          <label className="block text-sm font-bold">
+            MEMO
+            <textarea
+              value={draft.memo}
+              maxLength={300}
+              onChange={(event) =>
+                onChange({
+                  ...draft,
+                  memo: event.target.value.slice(0, 300),
+                })
+              }
+              placeholder="Simple Things Only"
+              className="mt-1 h-28 w-full resize-none rounded-xl border border-neutral-200 px-3 py-2 leading-relaxed"
+            />
+            <div className="mt-1 text-right text-xs font-bold text-neutral-400">
+              {memoLength}/300
+            </div>
+          </label>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={onDelete}
+              className="rounded-xl border border-red-200 px-4 py-3 font-black text-red-500"
+            >
+              {draft.editingId ? 'DELETE' : 'CANCEL'}
+            </button>
+
+            <button
+              type="button"
+              onClick={onSave}
+              className="rounded-xl px-4 py-3 font-black"
+              style={{
+                backgroundColor: theme.primaryBg,
+                color: theme.primaryText,
+              }}
+            >
+              SAVE
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1179,9 +1235,9 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
           </button>
         </div>
 
-        <CollapsibleSection title="시간 표시">
+        <CollapsibleSection title="Time Display">
           <label className="block text-sm font-bold">
-            하루의 시작
+            DayStart
             <TimeSelect
               value={dayStart}
               onChange={updateDayStart}
@@ -1189,7 +1245,7 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
           </label>
         </CollapsibleSection>
 
-        <CollapsibleSection title="메인 테마 색상">
+        <CollapsibleSection title="Main Theme Color">
           <div className="space-y-3">
             <ColorSetting
               label="Button Background"
@@ -1233,12 +1289,12 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="카테고리 관리">
+        <CollapsibleSection title="Setting Category">
           <div className="mb-3 grid grid-cols-[1fr_52px] gap-2">
             <input
               value={newCategoryName}
               onChange={(event) => setNewCategoryName(event.target.value)}
-              placeholder="새 카테고리 이름"
+              placeholder="New Category"
               className="rounded-xl border border-neutral-200 px-3 py-2"
             />
 
@@ -1259,7 +1315,7 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
               color: theme.primaryText,
             }}
           >
-            카테고리 추가
+            Add Category
           </button>
 
           <div className="space-y-3">
@@ -1304,7 +1360,7 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
                     onClick={() => deleteCategory(category.id)}
                     className="flex-1 rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-500"
                   >
-                    삭제
+                    DELETE
                   </button>
                 </div>
               </div>
@@ -1321,6 +1377,7 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
 type TimeSelectProps = {
   value: string
   onChange: (value: string) => void
+  disabled?: boolean
 }
 
 function splitTime(value: string) {
@@ -1332,7 +1389,7 @@ function splitTime(value: string) {
   }
 }
 
-function TimeSelect({ value, onChange }: TimeSelectProps) {
+function TimeSelect({ value, onChange, disabled = false }: TimeSelectProps) {
   // 값이 비어 있으면 화면상 기본값은 현재 시간으로 표시
   // 새 투두는 openNewTask에서 이미 값이 들어오므로 보통 비어 있지 않음
   const safeValue = value || getCurrentFiveMinuteTime()
@@ -1346,6 +1403,7 @@ function TimeSelect({ value, onChange }: TimeSelectProps) {
     <div className="mt-1 grid grid-cols-[1fr_auto_1fr_auto] items-center gap-2">
       <select
         value={hour}
+        disabled={disabled}
         onChange={(event) => updateTime(event.target.value, minute)}
         className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm"
       >
@@ -1360,6 +1418,7 @@ function TimeSelect({ value, onChange }: TimeSelectProps) {
 
       <select
         value={minute}
+        disabled={disabled}
         onChange={(event) => updateTime(hour, event.target.value)}
         className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm"
       >
@@ -1420,7 +1479,7 @@ function CollapsibleSection({
         <span className="text-base font-black">{title}</span>
 
         <span className="text-xs font-bold text-neutral-500">
-          {open ? '접기' : '펼치기'}
+          {open ? 'FOLD' : 'UNFOLD'}
         </span>
       </button>
 
