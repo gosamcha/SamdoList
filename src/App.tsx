@@ -315,7 +315,7 @@ function moveDate(amount: number) {
     <main className="min-h-screen bg-neutral-100">
       <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/95 px-3 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-2">
-          <div className="flex min-w-0 flex-1 items-center gap-1 pl-6">
+          <div className="flex min-w-0 flex-1 items-center gap-1">
             {/* 전날 이동 */}
             <button
               type="button"
@@ -342,11 +342,6 @@ function moveDate(amount: number) {
                 {displayDate}
               </button>
 
-              {/* 
-                iOS에서는 숨긴 input을 JS로 여는 게 잘 안 될 수 있어서,
-                투명한 date input을 날짜 글자 위에 덮어둠.
-                날짜 글자를 누르면 실제 input을 누르는 구조임.
-              */}
               <input
                 ref={dateInputRef}
                 type="date"
@@ -811,7 +806,6 @@ function TimePanel({
             const color = category?.color ?? '#d1d5db'
 
             return (
-              // 한 시간 줄 전체를 감싸는 영역
               // left-12는 왼쪽 시간 숫자 칸을 피하려고 둔 여백
               <div
                 key={`${task.id}-${blockIndex}-${hourIndex}`}
@@ -821,10 +815,6 @@ function TimePanel({
                   height: HOUR_HEIGHT,
                 }}
               >
-                {/* 
-                  실제 일정 블록
-                  여기서 left와 width가 가로 시간을 의미
-                */}
                 <div
                   className="absolute overflow-hidden rounded-lg border-l-4 px-2 py-1 text-xs font-black leading-tight shadow-sm"
                   style={{
@@ -842,6 +832,7 @@ function TimePanel({
                   {blockIndex === 0 && (
                     <div
                       className={clsx(
+                        'text-[11px] font-bold leading-tight',
                         task.status === 'partial' && 'text-neutral-400',
                       )}
                     >

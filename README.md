@@ -1,32 +1,101 @@
-# React + TypeScript + Vite
+# SamdoList (v1.0.0)
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+개인용 시간 관리 및 스터디 플래너 웹앱입니다.
 
-Currently, two official plugins are available:
+하루를 시간 단위로 나누어 계획을 세우고, 투두리스트를 체크하며 실제 진행 상태를 기록할 수 있습니다.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## 배포 링크
 
-## React Compiler
+https://samdolist.vercel.app/
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 주요 기능
 
-## Expanding the Oxlint configuration
+### 날짜별 플래너
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+- 날짜별로 투두리스트 작성
+- 좌우 화살표로 전날 / 다음날 이동
+- 날짜를 눌러 원하는 날짜 선택
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
-```
+### TIME TAB
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+- 하루의 시작 시간을 기준으로 24시간 표시
+- 일정이 있는 투두를 시간표에 표시
+- 미완료 일정은 연하게 표시
+- 완료 또는 일부 완료된 일정은 진하게 표시
+- 기상시간 / 취침시간을 기반으로 수면 시간을 회색 영역으로 표시
+
+### TODO TAB
+
+- 카테고리별 투두 관리
+- 체크 상태 변경 가능
+  - 빈칸: 미완료
+  - O: 완료
+  - △: 일부 완료
+- 투두를 클릭 시 투두 수정 가능
+- 할 일 이름, 시작 시간, 종료 시간, 메모 수정 가능
+- 시간 표시 안 함 설정 가능
+
+### 카테고리 관리
+
+- 카테고리 추가
+- 카테고리 이름 수정
+- 카테고리 색상 변경
+- 카테고리 삭제
+
+### 테마 설정
+
+- 버튼 색상 변경
+- 버튼 글자 색상 변경
+- 체크박스 상태별 색상 변경
+
+### 이미지 설정
+
+- 상단 카드에 개인 이미지 업로드 가능
+- 업로드한 이미지는 브라우저 로컬 저장소에 저장됨
+
+
+## 휴대폰 앱 설정 방법
+
+SamdoList는 웹앱이므로 별도의 앱스토어 설치 없이 브라우저에서 사용할 수 있습니다.
+
+배포 링크에 접속한 뒤, 휴대폰 홈 화면에 추가하면 일반 앱처럼 실행할 수 있습니다.
+
+
+### iPhone / iPad 설정 방법
+
+1. iPhone 또는 iPad에서 Safari를 엽니다.
+2. 배포  주소로 접속합니다. ( https://samdolist.vercel.app/ )
+3. Safari 하단의 공유 버튼을 누릅니다.
+4. 홈 화면에 추가를 선택합니다.
+5. 이름을 SamdoList로 설정한 뒤 추가를 누릅니다.
+6. 홈 화면에 생성된 SamdoList 아이콘을 눌러 실행합니다.
+
+### Android 설정 방법
+1. Android 기기에서 Chrome을 엽니다.
+2. 배포  주소로 접속합니다. ( https://samdolist.vercel.app/ )
+3. 오른쪽 위 메뉴 버튼을 누릅니다.
+4. 홈 화면에 추가 또는 앱 설치를 선택합니다.
+5. 이름을 SamdoList로 설정한 뒤 추가합니다.
+6. 홈 화면에 생성된 SamdoList 아이콘을 눌러 실행합니다.
+
+### 주의사항
+
+SamdoList는 IndexedDB를 사용해 데이터를 브라우저 안에 저장합니다.
+
+휴대폰에서 입력한 데이터는 해당 휴대폰 브라우저에 저장됩니다.
+
+- iPhone Safari에서 입력한 데이터는 iPhone Safari에 저장됩니다.
+- PC Chrome에서 입력한 데이터는 PC Chrome에 저장됩니다.
+- 기기 간 자동 동기화는 지원하지 않습니다.
+- 브라우저 데이터 삭제 시 저장된 일정과 투두가 함께 삭제될 수 있습니다.
+
+
+## 사용 기술
+
+- Vite
+- React
+- TypeScript
+- Tailwind CSS
+- Dexie.js
+- IndexedDB
+- Vercel
