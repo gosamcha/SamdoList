@@ -549,11 +549,8 @@ function moveDate(amount: number) {
           </button>
         </div>
 
-        {visibleTabCount === 0 ? (
-          <div className="mt-3 rounded-2xl border border-dashed border-neutral-300 bg-white p-8 text-center text-sm text-neutral-500">
-            No tabs turned on
-          </div>
-        ) : (
+        {/* 하나 이상의 탭이 켜져 있을 때만 탭 내용을 표시함 */}
+        {visibleTabCount > 0 && (
           <div
             className={clsx(
               'mt-3 grid gap-3',
