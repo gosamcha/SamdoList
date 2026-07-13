@@ -22,6 +22,8 @@ export interface DailyRecord {
   date: string
   wakeTime?: string
   sleepTime?: string
+
+  memo?: string
 }
 
 export interface AppSetting {

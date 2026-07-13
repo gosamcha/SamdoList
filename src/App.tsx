@@ -99,6 +99,8 @@ function App() {
   const [showTodoTab, setShowTodoTab] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const [draft, setDraft] = useState<TaskDraft | null>(null)
+  const [dailyMemo, setDailyMemo] = useState('')
+
   const dateInputRef = useRef<HTMLInputElement>(null)
 
 // yyyy-mm-dd 형태를 07/09 형태로 바꿈
@@ -190,6 +192,18 @@ function moveDate(amount: number) {
 
   const currentRecord = records.current
 
+  useEffect(() => {
+    if (currentRecord?.date === selectedDate) {
+      setDailyMemo(currentRecord.memo ?? '')
+    } else {
+      setDailyMemo('')
+    }
+  }, [
+    selectedDate,
+    currentRecord?.date,
+    currentRecord?.memo,
+  ])
+
   async function saveProfileImage(file?: File) {
     if (!file) return
 
@@ -211,13 +225,23 @@ function moveDate(amount: number) {
     reader.readAsDataURL(file)
   }
 
-  // 기상시간 / 취침시간을 날짜별 기록으로 저장
+  // 기상/취침/하루메모를 날짜별 기록으로 저장
   async function updateDailyRecord(patch: Partial<DailyRecord>) {
     const previous = await db.records.get(selectedDate)
     await db.records.put({
       date: selectedDate,
       ...previous,
       ...patch,
+    })
+  }
+
+  function changeDailyMemo(value: string) {
+    const nextMemo = value.slice(0, 300)
+
+    setDailyMemo(nextMemo)
+
+    void updateDailyRecord({
+      memo: nextMemo,
     })
   }
 
@@ -558,6 +582,59 @@ function moveDate(amount: number) {
             )}
           </div>
         )}
+
+        {/* 날짜 별 하루 메모 */}
+        <div className="mt-3 rounded-3xl border border-neutral-200 bg-white p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {/* 테마 색상 포인트 */}
+              <span
+                className="h-3 w-3 rounded-full"
+                style={{
+                  backgroundColor: theme.primaryBg,
+                }}
+              />
+
+              <span className="text-sm font-black">
+                Daily Memo
+              </span>
+            </div>
+
+            <span className="text-xs font-bold text-neutral-400">
+              {dailyMemo.length}/300
+            </span>
+          </div>
+
+          <textarea
+            value={dailyMemo}
+            maxLength={300}
+            onChange={(event) =>
+              changeDailyMemo(event.target.value)
+            }
+            placeholder="오늘 하루에 대한 간단한 메모"
+            className="
+              min-h-24
+              w-full
+              resize-none
+              rounded-2xl
+              border
+              border-neutral-200
+              bg-neutral-50
+              px-4
+              py-3
+              text-base
+              font-medium
+              leading-relaxed
+              text-neutral-800
+              outline-none
+              transition
+              placeholder:text-neutral-400
+              focus:border-neutral-400
+              focus:bg-white
+              sm:text-sm
+            "
+          />
+        </div>
       </section>
 
       {menuOpen && (
