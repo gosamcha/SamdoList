@@ -31,6 +31,7 @@ type RecordSet = {
 }
 
 const HOUR_HEIGHT = 42
+const EXTRA_LANE_HEIGHT = 20 //투두 3개 이상 시 추가되는 줄 높이
 
 // 앱 전체에서 쓰는 테마 색상 타입
 type ThemeColors = {
@@ -226,8 +227,26 @@ function moveDate(amount: number) {
     const title = draft.title.trim()
     if (!title) return
 
-    const startTime = draft.hideTime ? undefined : draft.startTime
-    const endTime = draft.hideTime ? undefined : draft.endTime
+    // No Time이면 시간을 저장하지 않고,
+    // XX:XX 상태인 빈 문자열도 undefined로 변환함
+    const startTime = draft.hideTime
+      ? undefined
+      : draft.startTime || undefined
+
+    const endTime = draft.hideTime
+      ? undefined
+      : draft.endTime || undefined
+
+    // No Time을 해제했다면 시작·종료 시간을 모두 설정해야 함
+    if (!draft.hideTime && (!startTime || !endTime)) {
+      alert('시작 시간과 종료 시간을 모두 설정해야 함.')
+      return
+    }
+
+    if (!draft.hideTime && startTime === endTime) {
+      alert('시작 시간과 종료 시간이 같을 수 없음.')
+      return
+    }
 
     if (!draft.hideTime && startTime === endTime) {
       alert('시작 시간과 종료 시간이 같을 수 없음.')
@@ -294,8 +313,10 @@ function moveDate(amount: number) {
       editingId: task.id,
       categoryId: task.categoryId,
       title: task.title,
-      startTime: task.startTime ?? getCurrentFiveMinuteTime(),
-      endTime: task.endTime ?? addMinutesToTime(getCurrentFiveMinuteTime(), 30),
+
+      startTime: task.startTime ?? '',
+      endTime: task.endTime ?? '',
+
       hideTime: !(task.startTime && task.endTime),
       memo: task.memo ?? '',
     })
@@ -581,58 +602,276 @@ function TimePanel({
       return new Map(categories.map((category) => [category.id, category]))
     }, [categories])
 
-    const timedTasks = tasks.filter((task) => task.startTime && task.endTime)
-    const totalHeight = HOUR_HEIGHT * 24
     const dayStartMinutes = timeToMinutes(dayStart)
 
-    const taskBlocks = useMemo(() => {
-      return timedTasks.flatMap((task) => {
-        if (!task.startTime || !task.endTime) return []
+    const timeLayout = useMemo(() => {
+      type TaskRange = {
+        task: PlannerTask
+        taskKey: string
 
-        const range = getTaskRange(task.startTime, task.endTime, dayStart)
+        // DayStart 기준으로 계산한 시작·종료 위치
+        startOffset: number
+        endOffset: number
+      }
 
-        const blocks: Array<{
-          task: PlannerTask
-          hourIndex: number
-          leftPercent: number
-          widthPercent: number
-          blockIndex: number
-        }> = []
+      type HourTaskSegment = {
+        range: TaskRange
 
-        let cursor = range.startOffset
-        let blockIndex = 0
+        // 현재 시간 줄 안에서 잘린 시작·종료 위치
+        segmentStart: number
+        segmentEnd: number
+      }
 
-        while (cursor < range.endOffset) {
-          const hourStart = Math.floor(cursor / 60) * 60
-          const hourEnd = hourStart + 60
+      type HourLayout = {
+        hourIndex: number
+        top: number
+        height: number
 
-          // 이번 블록이 끝나는 지점
-          const segmentEnd = Math.min(range.endOffset, hourEnd)
+        // 해당 시간 줄에서 동시에 겹치는 최대 투두 수
+        laneCount: number
+      }
 
-          // 현재 블록이 몇 번째 시간 줄에 들어가는지
-          const hourIndex = Math.floor(hourStart / 60)
+      type TaskBlock = {
+        task: PlannerTask
+        taskKey: string
+        hourIndex: number
+        leftPercent: number
+        widthPercent: number
 
-          // 한 시간 안에서 시작 위치를 가로로 계산
-          const leftPercent = ((cursor - hourStart) / 60) * 100
+        // 몇 번째 세로 칸에 배치할지
+        laneIndex: number
+        // 이 시간 줄의 전체 세로 칸 수
+        laneCount: number
 
-          // 한 시간 안에서 차지하는 길이를 가로로 계산
-          const widthPercent = ((segmentEnd - cursor) / 60) * 100
+        showTitle: boolean
+      }
 
-          blocks.push({
-            task,
-            hourIndex,
-            leftPercent,
-            widthPercent,
-            blockIndex,
-          })
-
-          cursor = segmentEnd
-          blockIndex += 1
+      function compareTaskRange(a: TaskRange, b: TaskRange) {
+        if (a.startOffset !== b.startOffset) {
+          return a.startOffset - b.startOffset
         }
 
-        return blocks
+        const aCreatedAt =
+          a.task.createdAt ?? Number.MAX_SAFE_INTEGER
+        const bCreatedAt =
+          b.task.createdAt ?? Number.MAX_SAFE_INTEGER
+
+        if (aCreatedAt !== bCreatedAt) {
+          return aCreatedAt - bCreatedAt
+        }
+
+        return (
+          (a.task.id ?? Number.MAX_SAFE_INTEGER) -
+          (b.task.id ?? Number.MAX_SAFE_INTEGER)
+        )
+      }
+
+      //* 시간이 설정된 투두를 DayStart 기준 범위로 변환
+      const ranges: TaskRange[] = tasks.flatMap((task, index) => {
+        if (!task.startTime || !task.endTime) return []
+
+        const range = getTaskRange(
+          task.startTime,
+          task.endTime,
+          dayStart,
+        )
+
+        // 타임 탭의 24시간 범위 밖에 있는 부분은 잘라냄
+        const startOffset = Math.max(0, range.startOffset)
+        const endOffset = Math.min(24 * 60, range.endOffset)
+
+        if (endOffset <= startOffset) return []
+
+        return [
+          {
+            task,
+
+            taskKey:
+              task.id !== undefined
+                ? `task-${task.id}`
+                : `task-${task.createdAt ?? index}-${index}`,
+
+            startOffset,
+            endOffset,
+          },
+        ]
       })
-    }, [timedTasks, dayStart])
+
+      ranges.sort(compareTaskRange)
+
+      //동시에 겹치는 최대 투두 개수를 계산함.
+      function getMaximumOverlap(
+        segments: HourTaskSegment[],
+      ) {
+        const events: Array<{
+          minute: number
+          change: number
+        }> = []
+
+        segments.forEach(({ segmentStart, segmentEnd }) => {
+          events.push({
+            minute: segmentStart,
+            change: 1,
+          })
+
+          events.push({
+            minute: segmentEnd,
+            change: -1,
+          })
+        })
+
+        events.sort((a, b) => {
+          if (a.minute !== b.minute) {
+            return a.minute - b.minute
+          }
+
+          return a.change - b.change
+        })
+
+        let currentCount = 0
+        let maximumCount = 0
+
+        events.forEach((event) => {
+          currentCount += event.change
+          maximumCount = Math.max(maximumCount, currentCount)
+        })
+
+        return Math.max(1, maximumCount)
+      }
+
+      const rawHourData = Array.from(
+        { length: 24 },
+        (_, hourIndex) => {
+          const hourStart = hourIndex * 60
+          const hourEnd = hourStart + 60
+
+          const segments: HourTaskSegment[] = ranges
+            .filter(
+              (range) =>
+                range.startOffset < hourEnd &&
+                range.endOffset > hourStart,
+            )
+            .map((range) => ({
+              range,
+              segmentStart: Math.max(
+                hourStart,
+                range.startOffset,
+              ),
+              segmentEnd: Math.min(
+                hourEnd,
+                range.endOffset,
+              ),
+            }))
+
+          const maximumOverlap =
+            getMaximumOverlap(segments)
+
+
+          const height =
+            maximumOverlap <= 2
+              ? HOUR_HEIGHT
+              : HOUR_HEIGHT +
+                (maximumOverlap - 2) * EXTRA_LANE_HEIGHT
+
+          const laneEndOffsets: number[] = []
+
+          const assignedSegments = [...segments]
+            .sort((a, b) =>
+              compareTaskRange(a.range, b.range),
+            )
+            .map((segment) => {
+
+              let laneIndex = laneEndOffsets.findIndex(
+                (endOffset) =>
+                  endOffset <= segment.segmentStart,
+              )
+
+              if (laneIndex === -1) {
+                laneIndex = laneEndOffsets.length
+              }
+
+              laneEndOffsets[laneIndex] =
+                segment.segmentEnd
+
+              return {
+                ...segment,
+                laneIndex,
+              }
+            })
+
+          return {
+            hourIndex,
+            height,
+            laneCount: maximumOverlap,
+            assignedSegments,
+          }
+        },
+      )
+
+      
+      let accumulatedTop = 0
+
+      const hourLayouts: HourLayout[] =
+        rawHourData.map((hourData) => {
+          const layout: HourLayout = {
+            hourIndex: hourData.hourIndex,
+            top: accumulatedTop,
+            height: hourData.height,
+            laneCount: hourData.laneCount,
+          }
+
+          accumulatedTop += hourData.height
+
+          return layout
+        })
+
+      const titleShownTasks = new Set<string>()
+      const taskBlocks: TaskBlock[] = []
+
+      rawHourData.forEach((hourData) => {
+        const hourStart = hourData.hourIndex * 60
+
+        hourData.assignedSegments.forEach(
+          ({ range, segmentStart, segmentEnd, laneIndex }) => {
+            const showTitle =
+              !titleShownTasks.has(range.taskKey)
+
+            titleShownTasks.add(range.taskKey)
+
+            taskBlocks.push({
+              task: range.task,
+              taskKey: range.taskKey,
+              hourIndex: hourData.hourIndex,
+
+              // 시간 위치와 길이는 기존처럼 가로축으로 계산
+              leftPercent:
+                ((segmentStart - hourStart) / 60) * 100,
+
+              widthPercent:
+                ((segmentEnd - segmentStart) / 60) * 100,
+
+              laneIndex,
+              laneCount: hourData.laneCount,
+              showTitle,
+            })
+          },
+        )
+      })
+
+      return {
+        hourLayouts,
+        taskBlocks,
+
+        // 모든 시간 줄 높이를 더한 최종 타임 탭 높이
+        totalHeight: accumulatedTop,
+      }
+    }, [tasks, dayStart])
+
+    const {
+      hourLayouts,
+      taskBlocks,
+      totalHeight,
+    } = timeLayout
 
     const sleepBlocks = useMemo(() => {
       const blocks: Array<{
@@ -667,22 +906,12 @@ function TimePanel({
           // 현재 cursor가 속한 시간 줄의 시작
           // 예: cursor = 150이면 2시간 30분 지점 → hourStart = 120
           const hourStart = Math.floor(cursor / 60) * 60
-
-          // 현재 시간 줄의 끝
           const hourEnd = hourStart + 60
 
-          // 이번 조각의 끝
           const segmentEnd = Math.min(endOffset, hourEnd)
 
-          // 몇 번째 시간 줄인지
           const hourIndex = Math.floor(hourStart / 60)
-
-          // 한 시간 안에서 시작 위치
-          // 예: 30분부터면 50%
           const leftPercent = ((cursor - hourStart) / 60) * 100
-
-          // 한 시간 안에서 차지하는 너비
-          // 예: 30분짜리면 50%
           const widthPercent = ((segmentEnd - cursor) / 60) * 100
 
           blocks.push({
@@ -695,9 +924,6 @@ function TimePanel({
         }
       }
 
-      // 오늘 기상시간이 있으면
-      // 전날 취침시간이 있을 때: 전날 취침시간 ~ 오늘 기상시간
-      // 전날 취침시간이 없을 때: 시간 탭 시작 ~ 오늘 기상시간
       if (records.current?.wakeTime) {
         const wakeTime = localDateAt(selectedDate, records.current.wakeTime).getTime()
 
@@ -714,9 +940,6 @@ function TimePanel({
         }
       }
 
-      // 오늘 취침시간이 있으면
-      // 다음날 기상시간이 있을 때: 오늘 취침시간 ~ 다음날 기상시간
-      // 다음날 기상시간이 없을 때: 오늘 취침시간 ~ 시간 탭 끝
       if (records.current?.sleepTime) {
         const sleepTime = sleepStartDateTime(
           selectedDate,
@@ -747,16 +970,22 @@ function TimePanel({
 
       <div className="max-h-[72vh] overflow-auto">
         <div className="relative" style={{ height: totalHeight }}>
-          {Array.from({ length: 24 }).map((_, hourIndex) => {
-            const label = minutesToTimeLabel(dayStartMinutes + hourIndex * 60)
+          {hourLayouts.map((hourLayout) => {
+            const { hourIndex, top, height } = hourLayout
+
+            const label = minutesToTimeLabel(
+              dayStartMinutes + hourIndex * 60,
+            )
 
             return (
               <div
                 key={hourIndex}
                 className="absolute left-0 right-0 border-t border-neutral-200"
                 style={{
-                  top: hourIndex * HOUR_HEIGHT,
-                  height: HOUR_HEIGHT,
+                  // 시간 줄마다 높이가 다를 수 있으므로
+                  // 미리 계산한 top과 height를 사용함
+                  top,
+                  height,
                 }}
               >
                 <div className="absolute left-0 top-1 w-6 text-right text-sm font-black text-neutral-400">
@@ -764,85 +993,140 @@ function TimePanel({
                 </div>
 
                 <div className="ml-7 grid h-full grid-cols-6">
-                  {Array.from({ length: 6 }).map((__, cellIndex) => (
-                    <div
-                      key={cellIndex}
-                      className="border-l border-neutral-200"
-                    />
-                  ))}
-                </div>
-              </div>
-            )
-          })}
-
-          {sleepBlocks.map((block, index) => (
-            <div
-              key={index}
-              className="pointer-events-none absolute left-7 right-0 z-0"
-              style={{
-                top: block.hourIndex * HOUR_HEIGHT,
-                height: HOUR_HEIGHT,
-              }}
-            >
-              <div
-                className="absolute bg-neutral-200/25" // 연한회색 100 진회색 300
-                style={{
-                  left: `${block.leftPercent}%`,
-                  width: `${block.widthPercent}%`,
-                  top: 0,
-                  height: '100%',
-                }}
-              />
-            </div>
-          ))}
-
-          {taskBlocks.map(({ task, hourIndex, leftPercent, widthPercent, blockIndex }) => {
-            const category = categoryMap.get(task.categoryId)
-
-            // 세로 위치는 "몇 번째 시간 줄인지"로만 결정함
-            const top = hourIndex * HOUR_HEIGHT
-
-            const strong = task.status !== 'todo'
-            const color = category?.color ?? '#d1d5db'
-
-            return (
-              // left-12는 왼쪽 시간 숫자 칸을 피하려고 둔 여백
-              <div
-                key={`${task.id}-${blockIndex}-${hourIndex}`}
-                className="absolute left-8 right-2"
-                style={{
-                  top,
-                  height: HOUR_HEIGHT,
-                }}
-              >
-                <div
-                  className="absolute overflow-hidden rounded-lg border-l-4 px-2 py-1 text-xs font-black leading-tight shadow-sm"
-                  style={{
-                    left: `${leftPercent}%`,
-                    width: `${widthPercent}%`,
-
-                    top: 4,
-                    height: HOUR_HEIGHT - 8,
-
-                    borderColor: color,
-                    backgroundColor: `${color}${strong ? '80' : '33'}`,
-                    opacity: strong ? 1 : 0.72,
-                  }}
-                >
-                  {blockIndex === 0 && (
-                    <div
-                      className={clsx(
-                        'text-[11px] font-bold leading-tight',
-                        task.status === 'partial' && 'text-neutral-400',
-                      )}
-                    >
-                      {task.title}
-                    </div>
+                  {Array.from({ length: 6 }).map(
+                    (__, cellIndex) => (
+                      <div
+                        key={cellIndex}
+                        className="border-l border-neutral-200"
+                      />
+                    ),
                   )}
                 </div>
               </div>
             )
           })}
+
+          {sleepBlocks.map((block, index) => {
+            const hourLayout =
+              hourLayouts[block.hourIndex]
+
+            if (!hourLayout) return null
+
+            return (
+              <div
+                key={index}
+                className="pointer-events-none absolute left-7 right-0 z-0"
+                style={{
+                  // 늘어난 시간 줄 높이에 맞춰 수면 배경도 같이 늘림
+                  top: hourLayout.top,
+                  height: hourLayout.height,
+                }}
+              >
+                <div
+                  className="absolute bg-neutral-200/25"
+                  style={{
+                    left: `${block.leftPercent}%`,
+                    width: `${block.widthPercent}%`,
+                    top: 0,
+                    height: '100%',
+                  }}
+                />
+              </div>
+            )
+          })}
+
+          {taskBlocks.map(
+            ({
+              task,
+              taskKey,
+              hourIndex,
+              leftPercent,
+              widthPercent,
+              laneIndex,
+              laneCount,
+              showTitle,
+            }) => {
+              const category =
+                categoryMap.get(task.categoryId)
+
+              const hourLayout =
+                hourLayouts[hourIndex]
+
+              if (!hourLayout) return null
+
+              const strong = task.status !== 'todo'
+              const color =
+                category?.color ?? '#d1d5db'
+
+              /*
+              * 시간 줄 안쪽 여백과 투두 사이 간격
+              */
+              const verticalPadding = 3
+              const laneGap = 2
+
+              /*
+              * 현재 시간 줄 높이를 겹치는 투두 개수만큼 나눔.
+              *
+              * laneCount가 1이면 한 칸 전체 사용
+              * laneCount가 2이면 위·아래 절반씩 사용
+              * laneCount가 3이면 늘어난 시간 줄을 3칸으로 사용
+              */
+              const laneHeight =
+                (
+                  hourLayout.height -
+                  verticalPadding * 2 -
+                  laneGap * (laneCount - 1)
+                ) / laneCount
+
+              const blockTop =
+                verticalPadding +
+                laneIndex * (laneHeight + laneGap)
+
+              return (
+                <div
+                  key={`${taskKey}-${hourIndex}`}
+                  className="absolute left-8 right-2"
+                  style={{
+                    // 동적으로 계산된 시간 줄 위치와 높이 사용
+                    top: hourLayout.top,
+                    height: hourLayout.height,
+                  }}
+                >
+                  <div
+                    className="absolute overflow-hidden rounded-md border-l-4 px-1.5 py-0.5 text-xs font-black leading-tight shadow-sm"
+                    style={{
+                      /*
+                      * 시간 위치와 길이는 가로축으로 유지함.
+                      * 세로축만 겹치는 투두 개수에 따라 나눔.
+                      */
+                      left: `${leftPercent}%`,
+                      width: `${widthPercent}%`,
+
+                      top: blockTop,
+                      height: laneHeight,
+
+                      borderColor: color,
+                      backgroundColor: `${color}${strong ? '80' : '33'}`,
+                      opacity: strong ? 1 : 0.72,
+                    }}
+                  >
+                    {/* 제목은 투두가 처음 나타나는 블록에서만 표시 */}
+                    {showTitle && (
+                      <div
+                        className={clsx(
+                          'truncate text-[10px] font-bold leading-tight',
+                          task.status === 'partial' &&
+                            'text-neutral-400',
+                        )}
+                      >
+                        {task.title}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            },
+          )}
         </div>
       </div>
     </section>
@@ -1231,6 +1515,7 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
             DayStart
             <TimeSelect
               value={dayStart}
+              allowEmpty={false}
               onChange={updateDayStart}
             />
           </label>
@@ -1369,24 +1654,68 @@ type TimeSelectProps = {
   value: string
   onChange: (value: string) => void
   disabled?: boolean
+  allowEmpty?: boolean
 }
 
 function splitTime(value: string) {
+  // 저장된 시간이 없으면 XX:XX로 표시함
+  if (!value) {
+    return {
+      hour: 'XX',
+      minute: 'XX',
+    }
+  }
+
   const [hour, minute] = value.split(':')
 
   return {
-    hour: hour ?? '00',
-    minute: minute ?? '00',
+    hour: hour || 'XX',
+    minute: minute || 'XX',
   }
 }
 
-function TimeSelect({ value, onChange, disabled = false }: TimeSelectProps) {
-  // 값이 비어 있으면 화면상 기본값은 현재 시간으로 표시
-  // 새 투두는 openNewTask에서 이미 값이 들어오므로 보통 비어 있지 않음
-  const safeValue = value || getCurrentFiveMinuteTime()
-  const { hour, minute } = splitTime(safeValue)
+function TimeSelect({
+  value,
+  onChange,
+  disabled = false,
+  allowEmpty = true,
+}: TimeSelectProps) {
+  /*
+   * 값이 비어 있으면 현재 시간을 자동으로 표시하지 않고
+   * XX:XX를 표시함.
+   *
+   * DayStart처럼 빈 값이 허용되지 않는 곳은
+   * allowEmpty={false}를 전달함.
+   */
+  const { hour, minute } = value
+    ? splitTime(value)
+    : allowEmpty
+      ? splitTime('')
+      : splitTime('00:00')
 
-  function updateTime(nextHour: string, nextMinute: string) {
+  function updateHour(nextHour: string) {
+    // XX를 선택하면 시간 전체를 미설정 상태로 바꿈
+    if (nextHour === 'XX') {
+      onChange('')
+      return
+    }
+
+    // XX:XX 상태에서 시를 먼저 고르면 분은 00으로 설정함
+    const nextMinute = minute === 'XX' ? '00' : minute
+
+    onChange(`${nextHour}:${nextMinute}`)
+  }
+
+  function updateMinute(nextMinute: string) {
+    // XX를 선택하면 시간 전체를 미설정 상태로 바꿈
+    if (nextMinute === 'XX') {
+      onChange('')
+      return
+    }
+
+    // XX:XX 상태에서 분을 먼저 고르면 시는 00으로 설정함
+    const nextHour = hour === 'XX' ? '00' : hour
+
     onChange(`${nextHour}:${nextMinute}`)
   }
 
@@ -1395,31 +1724,52 @@ function TimeSelect({ value, onChange, disabled = false }: TimeSelectProps) {
       <select
         value={hour}
         disabled={disabled}
-        onChange={(event) => updateTime(event.target.value, minute)}
+        onChange={(event) =>
+          updateHour(event.target.value)
+        }
         className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm"
       >
+        {/* 기상·취침·투두 시간에서는 XX 선택 가능 */}
+        {allowEmpty && (
+          <option value="XX">XX</option>
+        )}
+
         {HOUR_OPTIONS.map((hourOption) => (
-          <option key={hourOption} value={hourOption}>
+          <option
+            key={hourOption}
+            value={hourOption}
+          >
             {hourOption}
           </option>
         ))}
       </select>
 
-      <span className="text-sm font-bold text-neutral-500">:</span>
+      <span className="text-sm font-bold text-neutral-500">
+        :
+      </span>
 
       <select
         value={minute}
         disabled={disabled}
-        onChange={(event) => updateTime(hour, event.target.value)}
+        onChange={(event) =>
+          updateMinute(event.target.value)
+        }
         className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm"
       >
+        {/* 기상·취침·투두 시간에서는 XX 선택 가능 */}
+        {allowEmpty && (
+          <option value="XX">XX</option>
+        )}
+
         {MINUTE_OPTIONS.map((minuteOption) => (
-          <option key={minuteOption} value={minuteOption}>
+          <option
+            key={minuteOption}
+            value={minuteOption}
+          >
             {minuteOption}
           </option>
         ))}
       </select>
-
     </div>
   )
 }
