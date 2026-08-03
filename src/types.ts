@@ -28,3 +28,28 @@ export interface AppSetting {
   key: string
   value: string
 }
+
+export type DayTemplateTask = {
+  categoryId: number
+  categoryName: string
+  title: string
+  startTime?: string
+  endTime?: string
+  memo?: string
+}
+
+export type DayTemplate = {
+  id?: number
+  name: string
+
+  wakeTime?: string
+  sleepTime?: string
+
+  // DailyRecord에 memo가 실제로 존재할 때 사용
+  memo?: string
+
+  tasks: DayTemplateTask[]
+
+  createdAt: number
+  updatedAt: number
+}

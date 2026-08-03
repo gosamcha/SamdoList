@@ -4,7 +4,7 @@ import {toBlob} from 'html-to-image'
 import { useLiveQuery } from 'dexie-react-hooks'
 import clsx from 'clsx'
 import { db, seedInitialData } from './db'
-import type { Category, DailyRecord, PlannerTask, TaskStatus } from './types'
+import type { Category, DailyRecord, PlannerTask, TaskStatus, DayTemplate } from './types'
 import {
   addDays,
   formatDateLocal,
@@ -94,6 +94,8 @@ const nextStatus: Record<TaskStatus, TaskStatus> = {
   partial: 'todo',
 }
 
+
+
 function App() {
   const [selectedDate, setSelectedDate] = useState(formatDateLocal())
   const [showTimeTab, setShowTimeTab] = useState(true)
@@ -103,11 +105,18 @@ function App() {
   const dateInputRef = useRef<HTMLInputElement>(null)
   const captureRef = useRef<HTMLDivElement>(null)
   const [captureSaving, setCaptureSaving] = useState(false)
+  
 
 // yyyy-mm-dd 형태를 07/09 형태로 바꿈
 const displayDate = useMemo(() => {
   return selectedDate.slice(5).replace('-', '/')
 }, [selectedDate])
+
+const dayTemplates =
+  useLiveQuery(
+    () => db.dayTemplates.orderBy('updatedAt').reverse().toArray(),
+    [],
+  ) ?? []
 
 function moveDate(amount: number) {
   setSelectedDate((prevDate) => addDays(prevDate, amount))
@@ -396,6 +405,173 @@ function moveDate(amount: number) {
     })
   }
 
+  // 현재 날짜를 템플릿으로 저장
+  async function saveDayTemplate(templateName: string) {
+    const name = templateName.trim()
+
+    if (!name) {
+      alert('템플릿 이름을 입력해야 함.')
+      return
+    }
+
+    const categoryMap = new Map(
+      categories.flatMap((category) =>
+        category.id === undefined
+          ? []
+          : [[category.id, category] as const],
+      ),
+    )
+
+    const now = Date.now()
+
+    const templateData = {
+      name,
+
+      wakeTime: currentRecord?.wakeTime ?? '',
+      sleepTime: currentRecord?.sleepTime ?? '',
+
+      // DailyRecord에 memo가 있다면 주석을 제거
+      // memo: currentRecord?.memo ?? '',
+
+      tasks: tasks.map((task) => ({
+        categoryId: task.categoryId,
+        categoryName:
+          categoryMap.get(task.categoryId)?.name ?? '',
+        title: task.title,
+        startTime: task.startTime,
+        endTime: task.endTime,
+        memo: task.memo ?? '',
+      })),
+
+      updatedAt: now,
+    }
+
+    const existingTemplate = await db.dayTemplates
+      .where('name')
+      .equals(name)
+      .first()
+
+    if (existingTemplate?.id !== undefined) {
+      const overwrite = window.confirm(
+        '같은 이름의 템플릿이 있습니다. 현재 내용으로 덮어쓸까요?',
+      )
+
+      if (!overwrite) return
+
+      await db.dayTemplates.update(existingTemplate.id, templateData)
+      return
+    }
+
+    await db.dayTemplates.add({
+      ...templateData,
+      createdAt: now,
+    })
+  }
+
+  // 템플릿 불러오기
+  async function applyDayTemplate(template: DayTemplate) {
+    const hasCurrentData =
+      tasks.length > 0 ||
+      Boolean(currentRecord?.wakeTime) ||
+      Boolean(currentRecord?.sleepTime)
+
+    if (hasCurrentData) {
+      const overwrite = window.confirm(
+        '현재 날짜의 투두와 기상·취침 시간을 지우고 템플릿을 적용할까요?',
+      )
+
+      if (!overwrite) return
+    }
+
+    const categoriesById = new Map(
+      categories.flatMap((category) =>
+        category.id === undefined
+          ? []
+          : [[category.id, category] as const],
+      ),
+    )
+
+    const categoriesByName = new Map(
+      categories.map((category) => [
+        category.name.trim().toLowerCase(),
+        category,
+      ]),
+    )
+
+    let skippedTaskCount = 0
+
+    const newTasks = template.tasks.flatMap((templateTask, index) => {
+      const matchedCategory =
+        categoriesById.get(templateTask.categoryId) ??
+        categoriesByName.get(
+          templateTask.categoryName.trim().toLowerCase(),
+        )
+
+      if (matchedCategory?.id === undefined) {
+        skippedTaskCount += 1
+        return []
+      }
+
+      return [
+        {
+          date: selectedDate,
+          categoryId: matchedCategory.id,
+          title: templateTask.title,
+          startTime: templateTask.startTime,
+          endTime: templateTask.endTime,
+          memo: templateTask.memo ?? '',
+          status: 'todo' as const,
+          createdAt: Date.now() + index,
+        },
+      ]
+    })
+
+    await db.transaction(
+      'rw',
+      db.tasks,
+      db.records,
+      async () => {
+        await db.tasks
+          .where('date')
+          .equals(selectedDate)
+          .delete()
+
+        const previousRecord =
+          await db.records.get(selectedDate)
+
+        await db.records.put({
+          ...previousRecord,
+          date: selectedDate,
+          wakeTime: template.wakeTime ?? '',
+          sleepTime: template.sleepTime ?? '',
+
+          // DailyRecord에 memo가 있다면 주석을 제거
+          // memo: template.memo ?? '',
+        })
+
+        if (newTasks.length > 0) {
+          await db.tasks.bulkAdd(newTasks)
+        }
+      },
+    )
+
+    if (skippedTaskCount > 0) {
+      alert(
+        `템플릿을 적용했지만, 존재하지 않는 카테고리의 투두 ${skippedTaskCount}개는 제외됨.`,
+      )
+    }
+  }
+
+  // 템플릿 삭제
+  async function deleteDayTemplate(templateId?: number) {
+    if (templateId === undefined) return
+
+    const ok = window.confirm('이 템플릿을 삭제할까요?')
+    if (!ok) return
+
+    await db.dayTemplates.delete(templateId)
+  }
+
   const visibleTabCount = Number(showTimeTab) + Number(showTodoTab)
 
   return (
@@ -633,6 +809,10 @@ function moveDate(amount: number) {
           dayStart={dayStart}
           categories={categories}
           theme={theme}
+          dayTemplates={dayTemplates}
+          onSaveTemplate={saveDayTemplate}
+          onApplyTemplate={applyDayTemplate}
+          onDeleteTemplate={deleteDayTemplate}
           onClose={() => setMenuOpen(false)}
         />
       )}
@@ -1698,12 +1878,26 @@ type MenuDrawerProps = {
   dayStart: string
   categories: Category[]
   theme: ThemeColors
+  dayTemplates: DayTemplate[]
+  onSaveTemplate: (name: string) => Promise<void>
+  onApplyTemplate: (template: DayTemplate) => Promise<void>
+  onDeleteTemplate: (templateId?: number) => Promise<void>
   onClose: () => void
 }
 
-function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
+function MenuDrawer({
+    dayStart,
+    categories,
+    theme,
+    dayTemplates,
+    onSaveTemplate,
+    onApplyTemplate,
+    onDeleteTemplate,
+    onClose,
+  }: MenuDrawerProps) {
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryColor, setNewCategoryColor] = useState('#9ec9ef')
+  const [templateName, setTemplateName] = useState('')
 
   async function updateDayStart(value: string) {
     await db.settings.put({
@@ -1810,6 +2004,87 @@ function MenuDrawer({ dayStart, categories, theme, onClose }: MenuDrawerProps) {
             />
           </div>
         </CollapsibleSection>
+
+        <CollapsibleSection title="Day Template">
+          <div className="space-y-3">
+            <input
+              value={templateName}
+              onChange={(event) =>
+                setTemplateName(event.target.value)
+              }
+              placeholder="Template Name"
+              maxLength={30}
+              className="w-full rounded-xl border border-neutral-200 px-3 py-2"
+            />
+
+            <button
+              type="button"
+              onClick={async () => {
+                await onSaveTemplate(templateName)
+                setTemplateName('')
+              }}
+              className="w-full rounded-xl px-4 py-3 font-black"
+              style={{
+                backgroundColor: theme.primaryBg,
+                color: theme.primaryText,
+              }}
+            >
+              SAVE CURRENT DAY
+            </button>
+
+            {dayTemplates.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-neutral-200 p-4 text-center text-sm text-neutral-400">
+                No Template
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {dayTemplates.map((template) => (
+                  <div
+                    key={template.id}
+                    className="rounded-2xl border border-neutral-200 p-3"
+                  >
+                    <div className="mb-2">
+                      <div className="font-black">
+                        {template.name}
+                      </div>
+
+                      <div className="mt-0.5 text-xs font-bold text-neutral-400">
+                        {template.tasks.length} TO-DO
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await onApplyTemplate(template)
+                          onClose()
+                        }}
+                        className="rounded-xl px-3 py-2 text-sm font-black"
+                        style={{
+                          backgroundColor: theme.primaryBg,
+                          color: theme.primaryText,
+                        }}
+                      >
+                        APPLY
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void onDeleteTemplate(template.id)
+                        }
+                        className="rounded-xl border border-red-200 px-3 py-2 text-sm font-black text-red-500"
+                      >
+                        DELETE
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </CollapsibleSection> 
 
         <CollapsibleSection title="Setting Category">
           <div className="mb-3 grid grid-cols-[1fr_52px] gap-2">

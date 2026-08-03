@@ -1,11 +1,12 @@
 import Dexie, { type Table } from 'dexie'
-import type { AppSetting, Category, DailyRecord, PlannerTask } from './types'
+import type { AppSetting, Category, DailyRecord, PlannerTask, DayTemplate } from './types'
 
 class SamdoListDB extends Dexie {
   categories!: Table<Category, number>
   tasks!: Table<PlannerTask, number>
   records!: Table<DailyRecord, string>
   settings!: Table<AppSetting, string>
+  dayTemplates!: Table<DayTemplate, number>
 
   constructor() {
     super('SamdoListDB')
@@ -15,6 +16,14 @@ class SamdoListDB extends Dexie {
       tasks: '++id, date, categoryId, status',
       records: 'date',
       settings: 'key',
+    })
+
+    this.version(2).stores({
+      categories: '++id,name',
+      tasks: '++id,date,categoryId,status,createdAt',
+      records: 'date',
+      settings: 'key',
+      dayTemplates: '++id,&name,updatedAt',
     })
   }
 }
