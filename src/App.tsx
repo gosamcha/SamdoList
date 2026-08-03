@@ -102,6 +102,8 @@ function App() {
   const [showTodoTab, setShowTodoTab] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
   const [draft, setDraft] = useState<TaskDraft | null>(null)
+  const [dailyMemo, setDailyMemo] = useState('')
+
   const dateInputRef = useRef<HTMLInputElement>(null)
   const captureRef = useRef<HTMLDivElement>(null)
   const [captureSaving, setCaptureSaving] = useState(false)
@@ -202,6 +204,18 @@ function moveDate(amount: number) {
 
   const currentRecord = records.current
 
+  useEffect(() => {
+    if (currentRecord?.date === selectedDate) {
+      setDailyMemo(currentRecord.memo ?? '')
+    } else {
+      setDailyMemo('')
+    }
+  }, [
+    selectedDate,
+    currentRecord?.date,
+    currentRecord?.memo,
+  ])
+
   async function saveProfileImage(file?: File) {
     if (!file) return
 
@@ -286,6 +300,69 @@ function moveDate(amount: number) {
     }
   }
 
+    async function savePlannerImage() {
+    if (!captureRef.current || captureSaving) return
+
+    setCaptureSaving(true)
+
+    try {
+      // 웹 폰트가 있다면 폰트 로딩이 끝난 뒤 캡처
+      await document.fonts.ready
+
+      const blob = await toBlob(captureRef.current, {
+        width: 1080,
+        height: 1350,
+        pixelRatio: 1,
+        backgroundColor: '#f5f5f5',
+        cacheBust: true,
+      })
+
+      if (!blob) {
+        throw new Error('이미지를 생성하지 못함.')
+      }
+
+      const fileName = `samdolist-${selectedDate}.png`
+      const file = new File([blob], fileName, {
+        type: 'image/png',
+      })
+
+      // 아이폰·모바일에서 파일 공유를 지원하면 공유 메뉴 사용
+      if (
+        navigator.canShare &&
+        navigator.canShare({
+          files: [file],
+        })
+      ) {
+        await navigator.share({
+          files: [file],
+          title: `SamdoList ${selectedDate}`,
+        })
+
+        return
+      }
+
+      // 공유를 지원하지 않으면 일반 파일 다운로드
+      const imageUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+
+      link.href = imageUrl
+      link.download = fileName
+      link.click()
+
+      URL.revokeObjectURL(imageUrl)
+    } catch (error) {
+      // 사용자가 모바일 공유 메뉴를 직접 닫은 경우는 오류창을 띄우지 않음
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return
+      }
+
+      console.error(error)
+      alert('이미지 저장 중 오류가 발생함.')
+    } finally {
+      setCaptureSaving(false)
+    }
+  }
+
   // 기상시간 / 취침시간을 날짜별 기록으로 저장
   async function updateDailyRecord(patch: Partial<DailyRecord>) {
     const previous = await db.records.get(selectedDate)
@@ -293,6 +370,16 @@ function moveDate(amount: number) {
       date: selectedDate,
       ...previous,
       ...patch,
+    })
+  }
+
+  function changeDailyMemo(value: string) {
+    const nextMemo = value.slice(0, 300)
+
+    setDailyMemo(nextMemo)
+
+    void updateDailyRecord({
+      memo: nextMemo,
     })
   }
 
@@ -769,11 +856,8 @@ function moveDate(amount: number) {
           </button>
         </div>
 
-        {visibleTabCount === 0 ? (
-          <div className="mt-3 rounded-2xl border border-dashed border-neutral-300 bg-white p-8 text-center text-sm text-neutral-500">
-            No tabs turned on
-          </div>
-        ) : (
+        {/* 하나 이상의 탭이 켜져 있을 때만 탭 내용을 표시함 */}
+        {visibleTabCount > 0 && (
           <div
             className={clsx(
               'mt-3 grid gap-3',
@@ -802,6 +886,59 @@ function moveDate(amount: number) {
             )}
           </div>
         )}
+
+        {/* 날짜 별 하루 메모 */}
+        <div className="mt-3 rounded-3xl border border-neutral-200 bg-white p-4">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {/* 테마 색상 포인트 */}
+              <span
+                className="h-3 w-3 rounded-full"
+                style={{
+                  backgroundColor: theme.primaryBg,
+                }}
+              />
+
+              <span className="text-sm font-black">
+                Daily Memo
+              </span>
+            </div>
+
+            <span className="text-xs font-bold text-neutral-400">
+              {dailyMemo.length}/300
+            </span>
+          </div>
+
+          <textarea
+            value={dailyMemo}
+            maxLength={300}
+            onChange={(event) =>
+              changeDailyMemo(event.target.value)
+            }
+            placeholder="오늘 하루에 대한 간단한 메모"
+            className="
+              min-h-24
+              w-full
+              resize-none
+              rounded-2xl
+              border
+              border-neutral-200
+              bg-neutral-50
+              px-4
+              py-3
+              text-base
+              font-medium
+              leading-relaxed
+              text-neutral-800
+              outline-none
+              transition
+              placeholder:text-neutral-400
+              focus:border-neutral-400
+              focus:bg-white
+              sm:text-sm
+            "
+          />
+        </div>
       </section>
 
       {menuOpen && (
