@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronLeft, ChevronRight, Menu, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ImageDown, Menu, X } from 'lucide-react'
+import {toBlob} from 'html-to-image'
 import { useLiveQuery } from 'dexie-react-hooks'
 import clsx from 'clsx'
 import { db, seedInitialData } from './db'
@@ -100,6 +101,8 @@ function App() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [draft, setDraft] = useState<TaskDraft | null>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
+  const captureRef = useRef<HTMLDivElement>(null)
+  const [captureSaving, setCaptureSaving] = useState(false)
 
 // yyyy-mm-dd 형태를 07/09 형태로 바꿈
 const displayDate = useMemo(() => {
@@ -209,6 +212,69 @@ function moveDate(amount: number) {
 
     // 이미지를 base64 문자열로 바꿔서 IndexedDB에 저장
     reader.readAsDataURL(file)
+  }
+
+    async function savePlannerImage() {
+    if (!captureRef.current || captureSaving) return
+
+    setCaptureSaving(true)
+
+    try {
+      // 웹 폰트가 있다면 폰트 로딩이 끝난 뒤 캡처
+      await document.fonts.ready
+
+      const blob = await toBlob(captureRef.current, {
+        width: 1080,
+        height: 1350,
+        pixelRatio: 1,
+        backgroundColor: '#f5f5f5',
+        cacheBust: true,
+      })
+
+      if (!blob) {
+        throw new Error('이미지를 생성하지 못함.')
+      }
+
+      const fileName = `samdolist-${selectedDate}.png`
+      const file = new File([blob], fileName, {
+        type: 'image/png',
+      })
+
+      // 아이폰·모바일에서 파일 공유를 지원하면 공유 메뉴 사용
+      if (
+        navigator.canShare &&
+        navigator.canShare({
+          files: [file],
+        })
+      ) {
+        await navigator.share({
+          files: [file],
+          title: `SamdoList ${selectedDate}`,
+        })
+
+        return
+      }
+
+      // 공유를 지원하지 않으면 일반 파일 다운로드
+      const imageUrl = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+
+      link.href = imageUrl
+      link.download = fileName
+      link.click()
+
+      URL.revokeObjectURL(imageUrl)
+    } catch (error) {
+      // 사용자가 모바일 공유 메뉴를 직접 닫은 경우는 오류창을 띄우지 않음
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        return
+      }
+
+      console.error(error)
+      alert('이미지 저장 중 오류가 발생함.')
+    } finally {
+      setCaptureSaving(false)
+    }
   }
 
   // 기상시간 / 취침시간을 날짜별 기록으로 저장
@@ -386,10 +452,12 @@ function moveDate(amount: number) {
 
           <button
             type="button"
-            onClick={() => setMenuOpen(true)}
-            className="rounded-xl border border-neutral-200 px-3 py-2 text-xs text-neutral-600"
+            onClick={() => void savePlannerImage()}
+            disabled={captureSaving}
+            className="rounded-xl border border-neutral-200 p-2 disabled:opacity-40"
+            aria-label="이미지 저장"
           >
-            DayStart {dayStart}
+            <ImageDown size={22} />
           </button>
 
           <button
@@ -579,7 +647,164 @@ function moveDate(amount: number) {
           onDelete={deleteDraftTask}
         />
       )}
+
+      <CaptureView
+        captureRef={captureRef}
+        selectedDate={selectedDate}
+        displayDate={displayDate}
+        dayStart={dayStart}
+        categories={categories}
+        tasks={tasks}
+        records={records}
+        theme={theme}
+        profileImage={profileImage}
+        completionRate={completionRate}
+      />  
     </main>
+  )
+}
+
+type CaptureViewProps = {
+  captureRef: React.RefObject<HTMLDivElement | null>
+  selectedDate: string
+  displayDate: string
+  dayStart: string
+  categories: Category[]
+  tasks: PlannerTask[]
+  records: RecordSet
+  theme: ThemeColors
+  profileImage: string
+  completionRate: number
+}
+
+function CaptureView({
+  captureRef,
+  selectedDate,
+  displayDate,
+  dayStart,
+  categories,
+  tasks,
+  records,
+  theme,
+  profileImage,
+  completionRate,
+}: CaptureViewProps) {
+  const currentRecord = records.current
+
+  const noopCreate = () => {}
+  const noopEdit = () => {}
+  const noopStatus = () => {}
+
+  return (
+    <div
+      className="pointer-events-none fixed left-[-10000px] top-0"
+      aria-hidden="true"
+    >
+      <div
+        ref={captureRef}
+        className="overflow-hidden bg-neutral-100 p-8"
+        style={{
+          width: 1080,
+          height: 1350,
+        }}
+      >
+        <div
+          className="mb-5 text-6xl font-black"
+          style={{
+            color: theme.primaryBg,
+            letterSpacing: '-0.04em',
+          }}
+        >
+          {displayDate}
+        </div>
+
+        <div className="mb-5 rounded-3xl border border-neutral-200 bg-white p-5">
+          <div className="flex gap-5">
+            <div className="shrink-0">
+              <div className="grid h-36 w-36 place-items-center overflow-hidden rounded-2xl bg-white text-neutral-400">
+                {profileImage ? (
+                  <img
+                    src={profileImage}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <span className="text-lg font-bold">No Image</span>
+                )}
+              </div>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="mb-5">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-2xl font-black">
+                    Progress Bar
+                  </span>
+
+                  <span className="text-3xl font-black">
+                    {completionRate}%
+                  </span>
+                </div>
+
+                <div className="h-5 overflow-hidden rounded-full bg-neutral-200">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${completionRate}%`,
+                      backgroundColor: theme.primaryBg,
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-5">
+                <div>
+                  <div className="text-xl font-black">Wake-Up</div>
+                  <div className="mt-1 text-2xl font-bold text-neutral-500">
+                    {currentRecord?.wakeTime || 'XX:XX'}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-xl font-black">Sleep</div>
+                  <div className="mt-1 text-2xl font-bold text-neutral-500">
+                    {currentRecord?.sleepTime || 'XX:XX'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div
+          className="grid grid-cols-2 gap-5"
+          style={{
+            height: 1040,
+          }}
+        >
+          <TimePanel
+            selectedDate={selectedDate}
+            dayStart={dayStart}
+            categories={categories}
+            tasks={tasks}
+            records={records}
+            captureMode
+            hourHeight={34}
+            extraLaneHeight={12}
+          />
+
+          <TodoPanel
+            categories={categories}
+            tasks={tasks}
+            theme={theme}
+            onCreateTask={noopCreate}
+            onEditTask={noopEdit}
+            onCycleStatus={noopStatus}
+            captureMode
+          />
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -589,6 +814,9 @@ type TimePanelProps = {
   categories: Category[]
   tasks: PlannerTask[]
   records: RecordSet
+  captureMode?: boolean
+  hourHeight?: number
+  extraLaneHeight?: number
 }
 
 function TimePanel({
@@ -597,6 +825,9 @@ function TimePanel({
   categories,
   tasks,
   records,
+  captureMode = false,
+  hourHeight = HOUR_HEIGHT,
+  extraLaneHeight = EXTRA_LANE_HEIGHT,
 }: TimePanelProps) {
   const categoryMap = useMemo(() => {
       return new Map(categories.map((category) => [category.id, category]))
@@ -769,9 +1000,9 @@ function TimePanel({
 
           const height =
             maximumOverlap <= 2
-              ? HOUR_HEIGHT
-              : HOUR_HEIGHT +
-                (maximumOverlap - 2) * EXTRA_LANE_HEIGHT
+              ? hourHeight
+              : hourHeight  +
+                (maximumOverlap - 2) * extraLaneHeight
 
           const laneEndOffsets: number[] = []
 
@@ -865,7 +1096,7 @@ function TimePanel({
         // 모든 시간 줄 높이를 더한 최종 타임 탭 높이
         totalHeight: accumulatedTop,
       }
-    }, [tasks, dayStart])
+    }, [tasks, dayStart, hourHeight, extraLaneHeight])
 
     const {
       hourLayouts,
@@ -968,7 +1199,13 @@ function TimePanel({
   return (
     <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
 
-      <div className="max-h-[72vh] overflow-auto">
+      <div
+          className={clsx(
+            captureMode
+              ? 'overflow-hidden'
+              : 'max-h-[72vh] overflow-auto',
+          )}
+        >
         <div className="relative" style={{ height: totalHeight }}>
           {hourLayouts.map((hourLayout) => {
             const { hourIndex, top, height } = hourLayout
@@ -1140,6 +1377,7 @@ type TodoPanelProps = {
   onCreateTask: (category: Category) => void
   onEditTask: (task: PlannerTask) => void
   onCycleStatus: (task: PlannerTask) => void
+  captureMode?: boolean
 }
 
 function TodoPanel({
@@ -1149,6 +1387,7 @@ function TodoPanel({
   onCreateTask,
   onEditTask,
   onCycleStatus,
+  captureMode = false,
 }: TodoPanelProps) {
   // 모든 카테고리를 기본으로 보여줌
   // 해당 카테고리에 투두가 없어도 화면에 표시됨
@@ -1164,7 +1403,14 @@ function TodoPanel({
   return (
     <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
       {/* 투두리스트 탭 제목 제거 */}
-      <div className="max-h-[72vh] overflow-auto p-3">
+      <div
+          className={clsx(
+            'p-3',
+            captureMode
+              ? 'overflow-hidden'
+              : 'max-h-[72vh] overflow-auto',
+          )}
+        >
         {categories.length === 0 && (
           <div className="rounded-xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">
             empty category
