@@ -300,69 +300,6 @@ function moveDate(amount: number) {
     }
   }
 
-    async function savePlannerImage() {
-    if (!captureRef.current || captureSaving) return
-
-    setCaptureSaving(true)
-
-    try {
-      // 웹 폰트가 있다면 폰트 로딩이 끝난 뒤 캡처
-      await document.fonts.ready
-
-      const blob = await toBlob(captureRef.current, {
-        width: 1080,
-        height: 1350,
-        pixelRatio: 1,
-        backgroundColor: '#f5f5f5',
-        cacheBust: true,
-      })
-
-      if (!blob) {
-        throw new Error('이미지를 생성하지 못함.')
-      }
-
-      const fileName = `samdolist-${selectedDate}.png`
-      const file = new File([blob], fileName, {
-        type: 'image/png',
-      })
-
-      // 아이폰·모바일에서 파일 공유를 지원하면 공유 메뉴 사용
-      if (
-        navigator.canShare &&
-        navigator.canShare({
-          files: [file],
-        })
-      ) {
-        await navigator.share({
-          files: [file],
-          title: `SamdoList ${selectedDate}`,
-        })
-
-        return
-      }
-
-      // 공유를 지원하지 않으면 일반 파일 다운로드
-      const imageUrl = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-
-      link.href = imageUrl
-      link.download = fileName
-      link.click()
-
-      URL.revokeObjectURL(imageUrl)
-    } catch (error) {
-      // 사용자가 모바일 공유 메뉴를 직접 닫은 경우는 오류창을 띄우지 않음
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return
-      }
-
-      console.error(error)
-      alert('이미지 저장 중 오류가 발생함.')
-    } finally {
-      setCaptureSaving(false)
-    }
-  }
-
   // 기상시간 / 취침시간을 날짜별 기록으로 저장
   async function updateDailyRecord(patch: Partial<DailyRecord>) {
     const previous = await db.records.get(selectedDate)
