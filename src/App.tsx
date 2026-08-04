@@ -1447,9 +1447,9 @@ function CaptureView({
             <div className="flex min-h-[56px] min-w-0 flex-1 items-end pb-1">
               {currentRecord?.memo?.trim() ? (
                 <div
-                  className="truncate font-bold text-neutral-500"
+                  className="truncate font-semibold text-neutral-400"
                   style={{
-                    fontSize: 27,
+                    fontSize: 18,
                     letterSpacing: '0.01em',
                   }}
                 >
