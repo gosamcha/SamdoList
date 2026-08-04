@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronLeft, ChevronRight, ImageDown, Menu, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, GripVertical, ImageDown, Menu, X } from 'lucide-react'
 import {toBlob} from 'html-to-image'
 import { useLiveQuery } from 'dexie-react-hooks'
 import clsx from 'clsx'
@@ -63,6 +63,7 @@ const THEME_SETTING_KEYS = {
 
 // 상단 카드 왼쪽에 표시할 이미지 저장 key
 const PROFILE_IMAGE_KEY = 'profile.image'
+const CATEGORY_ORDER_KEY = 'category.order'
 
 // 00시 ~ 23시
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) =>
@@ -160,7 +161,40 @@ function moveDate(amount: number) {
     void seedInitialData()
   }, [])
 
-  const categories = useLiveQuery(() => db.categories.toArray(), []) ?? []
+  const categories =
+    useLiveQuery(async () => {
+      const [storedCategories, orderSetting] = await Promise.all([
+        db.categories.toArray(),
+        db.settings.get(CATEGORY_ORDER_KEY),
+      ])
+
+      let storedOrder: number[] = []
+
+      try {
+        const parsed = JSON.parse(orderSetting?.value ?? '[]')
+        storedOrder = Array.isArray(parsed)
+          ? parsed.filter((value): value is number => typeof value === 'number')
+          : []
+      } catch {
+        storedOrder = []
+      }
+
+      const orderMap = new Map(
+        storedOrder.map((categoryId, index) => [categoryId, index]),
+      )
+
+      return [...storedCategories].sort((a, b) => {
+        const aOrder = a.id === undefined
+          ? Number.MAX_SAFE_INTEGER
+          : orderMap.get(a.id) ?? Number.MAX_SAFE_INTEGER
+        const bOrder = b.id === undefined
+          ? Number.MAX_SAFE_INTEGER
+          : orderMap.get(b.id) ?? Number.MAX_SAFE_INTEGER
+
+        if (aOrder !== bOrder) return aOrder - bOrder
+        return (a.id ?? Number.MAX_SAFE_INTEGER) - (b.id ?? Number.MAX_SAFE_INTEGER)
+      })
+    }, []) ?? []
 
   const tasks =
     useLiveQuery(
@@ -252,7 +286,7 @@ function moveDate(amount: number) {
     if (!file) return
 
     if (!file.type.startsWith('image/')) {
-      alert('이미지 파일만 업로드할 수 있음.')
+      alert('Only image files can be uploaded')
       return
     }
 
@@ -288,7 +322,7 @@ function moveDate(amount: number) {
       })
 
       if (!blob) {
-        throw new Error('이미지를 생성하지 못함.')
+        throw new Error('Could not create the image')
       }
 
       const fileName = `samdolist-${selectedDate}.png`
@@ -306,7 +340,7 @@ function moveDate(amount: number) {
       window.setTimeout(() => URL.revokeObjectURL(imageUrl), 1000)
     } catch (error) {
       console.error(error)
-      alert('이미지 저장 중 오류가 발생함.')
+      alert('An error occurred while saving the image')
     } finally {
       setCaptureSaving(false)
     }
@@ -350,17 +384,17 @@ function moveDate(amount: number) {
 
     // No Time을 해제했다면 시작·종료 시간을 모두 설정해야 함
     if (!draft.hideTime && (!startTime || !endTime)) {
-      alert('시작 시간과 종료 시간을 모두 설정해야 함.')
+      alert('Set both the start and end times')
       return
     }
 
     if (!draft.hideTime && startTime === endTime) {
-      alert('시작 시간과 종료 시간이 같을 수 없음.')
+      alert('Start and end times cannot be the same')
       return
     }
 
     if (!draft.hideTime && startTime === endTime) {
-      alert('시작 시간과 종료 시간이 같을 수 없음.')
+      alert('Start and end times cannot be the same')
       return
     }
 
@@ -396,7 +430,7 @@ function moveDate(amount: number) {
       return
     }
 
-    const ok = window.confirm('해당 할 일은 영구적으로 삭제됩니다.')
+    const ok = window.confirm('This task will be permanently deleted')
     if (!ok) return
 
     await db.tasks.delete(draft.editingId)
@@ -441,12 +475,33 @@ function moveDate(amount: number) {
     })
   }
 
+  async function reorderCategory(sourceId: number, targetId: number) {
+    if (sourceId === targetId) return
+
+    const orderedIds = categories.flatMap((category) =>
+      category.id === undefined ? [] : [category.id],
+    )
+
+    const sourceIndex = orderedIds.indexOf(sourceId)
+    const targetIndex = orderedIds.indexOf(targetId)
+
+    if (sourceIndex === -1 || targetIndex === -1) return
+
+    orderedIds.splice(sourceIndex, 1)
+    orderedIds.splice(targetIndex, 0, sourceId)
+
+    await db.settings.put({
+      key: CATEGORY_ORDER_KEY,
+      value: JSON.stringify(orderedIds),
+    })
+  }
+
   // 현재 날짜를 템플릿으로 저장
   async function saveDayTemplate(templateName: string) {
     const name = templateName.trim()
 
     if (!name) {
-      alert('템플릿 이름을 입력해야 함.')
+      alert('Enter a template name')
       return
     }
 
@@ -489,7 +544,7 @@ function moveDate(amount: number) {
 
     if (existingTemplate?.id !== undefined) {
       const overwrite = window.confirm(
-        '같은 이름의 템플릿이 있습니다. 현재 내용으로 덮어쓸까요?',
+        'A template with this name already exists Overwrite it with the current day',
       )
 
       if (!overwrite) return
@@ -513,7 +568,7 @@ function moveDate(amount: number) {
 
     if (hasCurrentData) {
       const overwrite = window.confirm(
-        '현재 날짜의 투두와 기상·취침 시간을 지우고 템플릿을 적용할까요?',
+        'Delete the current tasks and wake sleep times and apply this template',
       )
 
       if (!overwrite) return
@@ -593,7 +648,7 @@ function moveDate(amount: number) {
 
     if (skippedTaskCount > 0) {
       alert(
-        `템플릿을 적용했지만, 존재하지 않는 카테고리의 투두 ${skippedTaskCount}개는 제외됨.`,
+        `Applied the template but skipped ${skippedTaskCount} tasks whose categories do not exist`,
       )
     }
   }
@@ -602,7 +657,7 @@ function moveDate(amount: number) {
   async function deleteDayTemplate(templateId?: number) {
     if (templateId === undefined) return
 
-    const ok = window.confirm('이 템플릿을 삭제할까요?')
+    const ok = window.confirm('Delete this template')
     if (!ok) return
 
     await db.dayTemplates.delete(templateId)
@@ -611,7 +666,14 @@ function moveDate(amount: number) {
   const visibleTabCount = Number(showTimeTab) + Number(showTodoTab)
 
   return (
-    <main className="min-h-screen bg-neutral-100">
+    <main className="samdolist-app min-h-screen bg-neutral-100">
+      <style>{`
+        .samdolist-app button,
+        .samdolist-app .force-bold-text {
+          font-weight: 900 !important;
+          -webkit-text-stroke: 0.22px currentColor;
+        }
+      `}</style>
       <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/95 px-3 py-3 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-1">
@@ -620,7 +682,7 @@ function moveDate(amount: number) {
               type="button"
               onClick={() => moveDate(-1)}
               className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-neutral-400 hover:bg-neutral-100"
-              aria-label="전날"
+              aria-label="Previous day"
             >
               <ChevronLeft size={24} strokeWidth={3} />
             </button>
@@ -647,7 +709,7 @@ function moveDate(amount: number) {
                 value={selectedDate}
                 onChange={(event) => setSelectedDate(event.target.value)}
                 className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                aria-label="날짜 선택"
+                aria-label="Select date"
               />
             </div>
 
@@ -656,7 +718,7 @@ function moveDate(amount: number) {
               type="button"
               onClick={() => moveDate(1)}
               className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-neutral-400 hover:bg-neutral-100"
-              aria-label="다음날"
+              aria-label="Next day"
             >
               <ChevronRight size={24} strokeWidth={3} />
             </button>
@@ -667,7 +729,7 @@ function moveDate(amount: number) {
             onClick={() => void savePlannerImage()}
             disabled={captureSaving}
             className="rounded-xl border border-neutral-200 p-2 disabled:opacity-40"
-            aria-label="이미지 저장"
+            aria-label="Save image"
           >
             <ImageDown size={22} />
           </button>
@@ -676,7 +738,7 @@ function moveDate(amount: number) {
             type="button"
             onClick={() => setMenuOpen(true)}
             className="rounded-xl border border-neutral-200 p-2"
-            aria-label="메뉴 열기"
+            aria-label="Open menu"
           >
             <Menu size={22} />
           </button>
@@ -692,14 +754,14 @@ function moveDate(amount: number) {
                 {profileImage ? (
                   <img
                     src={profileImage}
-                    alt="사용자 이미지"
+                    alt="Profile image"
                     className="h-full w-full object-cover"
                   />
                 ) : (
                   <span>
-                    사진
+                    Add
                     <br />
-                    추가
+                    Photo
                   </span>
                 )}
 
@@ -827,6 +889,7 @@ function moveDate(amount: number) {
               <TodoPanel
                 categories={categories}
                 tasks={tasks}
+                dayStart={dayStart}
                 theme={theme}
                 onCreateTask={openNewTask}
                 onEditTask={openEditTask}
@@ -864,7 +927,7 @@ function moveDate(amount: number) {
             onChange={(event) =>
               changeDailyMemo(event.target.value)
             }
-            placeholder="오늘 하루에 대한 간단한 메모"
+            placeholder="A short note about today"
             className="
               min-h-24
               w-full
@@ -899,6 +962,7 @@ function moveDate(amount: number) {
           onSaveTemplate={saveDayTemplate}
           onApplyTemplate={applyDayTemplate}
           onDeleteTemplate={deleteDayTemplate}
+          onReorderCategory={reorderCategory}
           onClose={() => setMenuOpen(false)}
         />
       )}
@@ -1147,6 +1211,7 @@ function CaptureView({
             <TodoPanel
               categories={categories}
               tasks={tasks}
+              dayStart={dayStart}
               theme={theme}
               onCreateTask={noopCreate}
               onEditTask={noopEdit}
@@ -1466,32 +1531,40 @@ function TimePanel({
               : extraLaneHeight +
                 (displayLaneCount - 3) * extraLaneHeight
 
-          const laneEndOffsets: number[] = []
+          // displayLaneCount는 동시에 필요한 세로 칸 수임.
+          // 시간대 안에 존재하는 전체 투두 개수와는 다르므로,
+          // 여기서 segments를 slice하면 서로 겹치지 않는 뒤쪽 투두까지 사라짐.
+          const laneEndOffsets = Array.from(
+            { length: displayLaneCount },
+            () => Number.NEGATIVE_INFINITY,
+          )
 
-          const visibleSegments = [...segments]
+          const assignedSegments = [...segments]
             .sort((a, b) =>
               compareTaskRange(a.range, b.range),
             )
-            .slice(0, displayLaneCount)
+            .flatMap((segment) => {
+              const laneIndex = laneEndOffsets.findIndex(
+                (endOffset) =>
+                  endOffset <= segment.segmentStart,
+              )
 
-          const assignedSegments = visibleSegments.map((segment) => {
-            let laneIndex = laneEndOffsets.findIndex(
-              (endOffset) =>
-                endOffset <= segment.segmentStart,
-            )
+              // 같은 순간에 네 개 이상 겹친 경우에는 앞선 세 개만 표시함.
+              // 이후 빈 lane이 생긴 뒤 시작하는 투두는 정상적으로 다시 표시됨.
+              if (laneIndex === -1) {
+                return []
+              }
 
-            if (laneIndex === -1) {
-              laneIndex = laneEndOffsets.length
-            }
+              laneEndOffsets[laneIndex] =
+                segment.segmentEnd
 
-            laneEndOffsets[laneIndex] =
-              segment.segmentEnd
-
-            return {
-              ...segment,
-              laneIndex,
-            }
-          })
+              return [
+                {
+                  ...segment,
+                  laneIndex,
+                },
+              ]
+            })
 
           return {
             hourIndex,
@@ -1591,7 +1664,6 @@ function TimePanel({
           return layout
         })
 
-      const titleShownTasks = new Set<string>()
       const taskBlocks: TaskBlock[] = []
 
       resolvedHourData.forEach((hourData) => {
@@ -1599,10 +1671,10 @@ function TimePanel({
 
         hourData.assignedSegments.forEach(
           ({ range, segmentStart, segmentEnd, laneIndex }) => {
+            // 제목은 반드시 실제 시작 시간이 포함된 첫 구간에만 표시함.
+            // 짧은 구간이어도 ellipsis로 축약되어 시작 위치에서 보임.
             const showTitle =
-              !titleShownTasks.has(range.taskKey)
-
-            titleShownTasks.add(range.taskKey)
+              Math.abs(segmentStart - range.startOffset) < 0.001
 
             taskBlocks.push({
               task: range.task,
@@ -1650,8 +1722,8 @@ function TimePanel({
   return (
     <section
       className={clsx(
-        'overflow-hidden rounded-2xl border border-neutral-200 bg-white',
-        captureMode && 'h-full',
+        'overflow-hidden border border-neutral-200 bg-white',
+        captureMode ? 'h-full rounded-[30px]' : 'rounded-2xl',
       )}
     >
       <div
@@ -1801,8 +1873,10 @@ function TimePanel({
                 <div
                   key={`${taskKey}-${hourIndex}`}
                   className={clsx(
-                    'absolute right-2',
-                    captureMode ? 'left-13' : 'left-8',
+                    'absolute right-0',
+                    // 시간 그리드와 정확히 같은 가로 좌표계를 사용해야
+                    // 50분처럼 뒤쪽에 시작하는 일정도 왼쪽으로 밀리지 않음.
+                    captureMode ? 'left-12' : 'left-7',
                   )}
                   style={{
                     // 동적으로 계산된 시간 줄 위치와 높이 사용
@@ -1812,36 +1886,39 @@ function TimePanel({
                 >
                   <div
                     className={clsx(
-                      'absolute overflow-hidden rounded-md border-l-4 font-black shadow-sm',
+                      'absolute min-w-0 overflow-hidden shadow-sm',
                       captureMode
-                        ? 'flex items-center px-2 py-0.5'
-                        : 'px-1.5 py-0.5 text-xs leading-tight',
+                        ? 'rounded-[12px] px-1.5 py-1'
+                        : 'rounded-md px-1.5 py-0.5 text-xs leading-tight',
                     )}
                     style={{
                       /*
                       * 시간 위치와 길이는 가로축으로 유지함.
                       * 세로축만 겹치는 투두 개수에 따라 나눔.
                       */
-                      left: `${leftPercent}%`,
-                      width: `${widthPercent}%`,
+                      // 계산 기준은 시간 그리드와 완전히 동일하게 유지하고,
+                      // 정확한 시작 위치의 안쪽으로만 작은 여백을 추가함.
+                      // 따라서 12:50 일정은 50분 선보다 앞에 나타나지 않음.
+                      left: `calc(${leftPercent}% + ${captureMode ? 5 : 4}px)`,
+                      width: `max(2px, calc(${widthPercent}% - ${captureMode ? 10 : 8}px))`,
 
                       top: blockTop,
                       height: laneHeight,
 
-                      borderColor: color,
-                      backgroundColor: `${color}${strong ? '80' : '33'}`,
-                      opacity: strong ? 1 : 0.72,
+                      border: `1px solid ${color}${strong ? '70' : '55'}`,
+                      backgroundColor: `${color}${strong ? '30' : '20'}`,
+                      opacity: strong ? 1 : 0.82,
                     }}
                   >
                     {/* 제목은 투두가 처음 나타나는 블록에서만 표시 */}
                     {showTitle && (
                       <div
                         className={clsx(
-                          'truncate w-full font-bold',
+                          'block min-w-0 w-full overflow-hidden text-ellipsis whitespace-nowrap font-bold',
                           captureMode
                             ? laneCount >= 3
-                              ? 'text-[12px] leading-none'
-                              : 'text-[16px] leading-none'
+                              ? 'text-[12px] leading-tight'
+                              : 'text-[16px] leading-tight'
                             : 'text-[10px] leading-tight',
                           task.status === 'partial' &&
                             'text-neutral-400',
@@ -1864,6 +1941,7 @@ function TimePanel({
 type TodoPanelProps = {
   categories: Category[]
   tasks: PlannerTask[]
+  dayStart: string
   theme: ThemeColors
   onCreateTask: (category: Category) => void
   onEditTask: (task: PlannerTask) => void
@@ -1874,6 +1952,7 @@ type TodoPanelProps = {
 function TodoPanel({
   categories,
   tasks,
+  dayStart,
   theme,
   onCreateTask,
   onEditTask,
@@ -1882,24 +1961,49 @@ function TodoPanel({
 }: TodoPanelProps) {
   // 일반 화면에서는 모든 카테고리를 보여주고,
   // 캡처 화면에서는 투두가 있는 카테고리만 보여줌.
+  function compareTasksByStartTime(a: PlannerTask, b: PlannerTask) {
+    const aHasTime = Boolean(a.startTime && a.endTime)
+    const bHasTime = Boolean(b.startTime && b.endTime)
+
+    if (aHasTime !== bHasTime) return aHasTime ? -1 : 1
+
+    if (aHasTime && bHasTime) {
+      const aStart = getTaskRange(a.startTime!, a.endTime!, dayStart).startOffset
+      const bStart = getTaskRange(b.startTime!, b.endTime!, dayStart).startOffset
+
+      if (aStart !== bStart) return aStart - bStart
+    }
+
+    const createdDiff =
+      (a.createdAt ?? Number.MAX_SAFE_INTEGER) -
+      (b.createdAt ?? Number.MAX_SAFE_INTEGER)
+
+    if (createdDiff !== 0) return createdDiff
+    return (a.id ?? Number.MAX_SAFE_INTEGER) - (b.id ?? Number.MAX_SAFE_INTEGER)
+  }
+
   const grouped = categories
     .map((category) => ({
       category,
-      tasks: tasks.filter((task) => task.categoryId === category.id),
+      tasks: tasks
+        .filter((task) => task.categoryId === category.id)
+        .sort(compareTasksByStartTime),
     }))
     .filter(({ tasks: categoryTasks }) =>
       captureMode ? categoryTasks.length > 0 : true,
     )
 
-  const uncategorized = tasks.filter(
-    (task) => !categories.some((category) => category.id === task.categoryId),
-  )
+  const uncategorized = tasks
+    .filter(
+      (task) => !categories.some((category) => category.id === task.categoryId),
+    )
+    .sort(compareTasksByStartTime)
 
   return (
     <section
       className={clsx(
-        'overflow-hidden rounded-2xl border border-neutral-200 bg-white',
-        captureMode && 'h-full',
+        'overflow-hidden border border-neutral-200 bg-white',
+        captureMode ? 'h-full rounded-[30px]' : 'rounded-2xl',
       )}
     >
       {/* 투두리스트 탭 제목 제거 */}
@@ -1942,7 +2046,7 @@ function TodoPanel({
 
               <span
                 className={clsx(
-                  'font-black',
+                  'force-bold-text font-black',
                   captureMode ? 'text-[25px]' : 'text-base',
                 )}
               >
@@ -1982,7 +2086,7 @@ function TodoPanel({
                 captureMode ? 'text-2xl' : 'text-lg',
               )}
             >
-              삭제된 카테고리
+              Deleted Category
             </h3>
 
             <div className="divide-y divide-neutral-200">
@@ -2042,9 +2146,9 @@ function TodoItem({
         type="button"
         onClick={() => onCycleStatus(task)}
         className={clsx(
-          'grid shrink-0 place-items-center font-black',
+          'grid shrink-0 place-items-center font-extrabold',
           captureMode
-            ? 'h-[52px] w-[52px] rounded-[17px] border-[3px] text-[20px]'
+            ? 'h-[46px] w-[46px] rounded-[15px] border-[3px] text-[19px]'
             : 'h-9 w-9 rounded-xl border-2 text-sm',
         )}
         style={{
@@ -2253,6 +2357,7 @@ type MenuDrawerProps = {
   onSaveTemplate: (name: string) => Promise<void>
   onApplyTemplate: (template: DayTemplate) => Promise<void>
   onDeleteTemplate: (templateId?: number) => Promise<void>
+  onReorderCategory: (sourceId: number, targetId: number) => Promise<void>
   onClose: () => void
 }
 
@@ -2264,11 +2369,49 @@ function MenuDrawer({
     onSaveTemplate,
     onApplyTemplate,
     onDeleteTemplate,
+    onReorderCategory,
     onClose,
   }: MenuDrawerProps) {
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryColor, setNewCategoryColor] = useState('#9ec9ef')
   const [templateName, setTemplateName] = useState('')
+  const [draggedCategoryId, setDraggedCategoryId] = useState<number | null>(null)
+  const categoryPressTimerRef = useRef<number | null>(null)
+
+  function clearCategoryPressTimer() {
+    if (categoryPressTimerRef.current !== null) {
+      window.clearTimeout(categoryPressTimerRef.current)
+      categoryPressTimerRef.current = null
+    }
+  }
+
+  function startCategoryPress(categoryId: number) {
+    clearCategoryPressTimer()
+
+    categoryPressTimerRef.current = window.setTimeout(() => {
+      setDraggedCategoryId(categoryId)
+      categoryPressTimerRef.current = null
+      navigator.vibrate?.(20)
+    }, 350)
+  }
+
+  function movePressedCategory(event: React.PointerEvent) {
+    if (draggedCategoryId === null) return
+
+    const target = document
+      .elementFromPoint(event.clientX, event.clientY)
+      ?.closest<HTMLElement>('[data-category-id]')
+
+    const targetId = Number(target?.dataset.categoryId)
+
+    if (!Number.isFinite(targetId) || targetId === draggedCategoryId) return
+    void onReorderCategory(draggedCategoryId, targetId)
+  }
+
+  function endCategoryPress() {
+    clearCategoryPressTimer()
+    setDraggedCategoryId(null)
+  }
 
   async function updateDayStart(value: string) {
     await db.settings.put({
@@ -2300,7 +2443,7 @@ function MenuDrawer({
   async function deleteCategory(categoryId?: number) {
     if (!categoryId) return
 
-    const ok = window.confirm('카테고리를 삭제할까요? 기존 투두는 남아 있지만 삭제된 카테고리로 표시됩니다.')
+    const ok = window.confirm('Delete this category Existing tasks will remain under Deleted Category')
     if (!ok) return
 
     await db.categories.delete(categoryId)
@@ -2308,9 +2451,9 @@ function MenuDrawer({
 
   return (
     <div className="fixed inset-0 z-30 bg-black/30">
-      <aside className="ml-auto h-full w-[88vw] max-w-md overflow-auto bg-white p-4 shadow-xl">
+      <aside className="ml-auto h-full w-[88vw] max-w-md overflow-auto bg-white p-4 shadow-xl [&_button]:font-black">
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-xl font-black">메뉴</h2>
+          <h2 className="text-xl font-black">Menu</h2>
 
           <button
             type="button"
@@ -2385,7 +2528,7 @@ function MenuDrawer({
               }
               placeholder="Template Name"
               maxLength={30}
-              className="w-full rounded-xl border border-neutral-200 px-3 py-2"
+              className="w-full rounded-xl border border-neutral-200 px-3 py-2 font-bold"
             />
 
             <button
@@ -2463,7 +2606,7 @@ function MenuDrawer({
               value={newCategoryName}
               onChange={(event) => setNewCategoryName(event.target.value)}
               placeholder="New Category"
-              className="rounded-xl border border-neutral-200 px-3 py-2"
+              className="rounded-xl border border-neutral-200 px-3 py-2 font-bold"
             />
 
             <input
@@ -2490,11 +2633,32 @@ function MenuDrawer({
             {categories.map((category) => (
               <div
                 key={category.id}
-                className="rounded-2xl border border-neutral-200 p-3"
+                data-category-id={category.id}
+                className={clsx(
+                  'rounded-2xl border border-neutral-200 p-3 transition',
+                  draggedCategoryId === category.id &&
+                    'scale-[1.01] border-neutral-400 bg-neutral-50 shadow-lg',
+                )}
               >
                 <div className="mb-2 flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label={`Reorder ${category.name}`}
+                    className="grid h-10 w-8 shrink-0 touch-none place-items-center rounded-lg text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                    onPointerDown={(event) => {
+                      if (category.id === undefined) return
+                      event.currentTarget.setPointerCapture(event.pointerId)
+                      startCategoryPress(category.id)
+                    }}
+                    onPointerMove={movePressedCategory}
+                    onPointerUp={endCategoryPress}
+                    onPointerCancel={endCategoryPress}
+                  >
+                    <GripVertical size={20} strokeWidth={2.5} />
+                  </button>
+
                   <span
-                    className="h-3 w-3 rounded-full"
+                    className="h-3 w-3 shrink-0 rounded-full"
                     style={{ backgroundColor: category.color }}
                   />
 
@@ -2506,7 +2670,7 @@ function MenuDrawer({
                         name: event.target.value,
                       })
                     }
-                    className="min-w-0 flex-1 rounded-xl border border-neutral-200 px-3 py-2 font-bold"
+                    className="force-bold-text min-w-0 flex-1 rounded-xl border border-neutral-200 px-3 py-2 font-black"
                   />
                 </div>
 
