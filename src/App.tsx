@@ -234,6 +234,168 @@ async function waitForCaptureAssets(root: HTMLElement) {
       ),
     ),
   )
+
+}
+
+type CaptureProfileSlot = {
+  x: number
+  y: number
+  width: number
+  height: number
+  radius: number
+}
+
+function getCaptureProfileSlot(
+  root: HTMLElement,
+): CaptureProfileSlot | null {
+  const slot = root.querySelector<HTMLElement>(
+    '[data-capture-profile-slot]',
+  )
+
+  if (!slot) return null
+
+  const rootRect = root.getBoundingClientRect()
+  const slotRect = slot.getBoundingClientRect()
+  const computedStyle = window.getComputedStyle(slot)
+
+  return {
+    x: slotRect.left - rootRect.left,
+    y: slotRect.top - rootRect.top,
+    width: slotRect.width,
+    height: slotRect.height,
+    radius: Number.parseFloat(computedStyle.borderTopLeftRadius) || 0,
+  }
+}
+
+function loadImageForCanvas(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image()
+
+    image.onload = async () => {
+      try {
+        if (typeof image.decode === 'function') {
+          await image.decode()
+        }
+      } catch {
+        // onload가 끝났다면 Safari의 decode 실패는 무시함
+      }
+
+      resolve(image)
+    }
+
+    image.onerror = () => {
+      reject(new Error('Could not load an image for capture'))
+    }
+
+    image.src = src
+  })
+}
+
+function addRoundedRectPath(
+  context: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  radius: number,
+) {
+  const resolvedRadius = Math.max(
+    0,
+    Math.min(radius, width / 2, height / 2),
+  )
+
+  context.beginPath()
+  context.moveTo(x + resolvedRadius, y)
+  context.lineTo(x + width - resolvedRadius, y)
+  context.quadraticCurveTo(
+    x + width,
+    y,
+    x + width,
+    y + resolvedRadius,
+  )
+  context.lineTo(x + width, y + height - resolvedRadius)
+  context.quadraticCurveTo(
+    x + width,
+    y + height,
+    x + width - resolvedRadius,
+    y + height,
+  )
+  context.lineTo(x + resolvedRadius, y + height)
+  context.quadraticCurveTo(
+    x,
+    y + height,
+    x,
+    y + height - resolvedRadius,
+  )
+  context.lineTo(x, y + resolvedRadius)
+  context.quadraticCurveTo(x, y, x + resolvedRadius, y)
+  context.closePath()
+}
+
+async function canvasToPngBlob(canvas: HTMLCanvasElement) {
+  const blob = await new Promise<Blob | null>((resolve) => {
+    canvas.toBlob(resolve, 'image/png')
+  })
+
+  if (blob) return blob
+
+  // 일부 구형 iOS Safari에서 toBlob이 null을 반환할 때의 fallback
+  const response = await fetch(canvas.toDataURL('image/png'))
+  return response.blob()
+}
+
+async function compositeProfileImage(
+  baseBlob: Blob,
+  profileImage: string,
+  slot: CaptureProfileSlot,
+) {
+  const baseImageUrl = URL.createObjectURL(baseBlob)
+
+  try {
+    const [baseImage, profile] = await Promise.all([
+      loadImageForCanvas(baseImageUrl),
+      loadImageForCanvas(profileImage),
+    ])
+
+    const canvas = document.createElement('canvas')
+    canvas.width = 1080
+    canvas.height = 1350
+
+    const context = canvas.getContext('2d')
+
+    if (!context) {
+      throw new Error('Could not create the final capture canvas')
+    }
+
+    context.drawImage(baseImage, 0, 0, canvas.width, canvas.height)
+
+    const scale = Math.max(
+      slot.width / profile.naturalWidth,
+      slot.height / profile.naturalHeight,
+    )
+
+    const drawWidth = profile.naturalWidth * scale
+    const drawHeight = profile.naturalHeight * scale
+    const drawX = slot.x + (slot.width - drawWidth) / 2
+    const drawY = slot.y + (slot.height - drawHeight) / 2
+
+    context.save()
+    addRoundedRectPath(
+      context,
+      slot.x,
+      slot.y,
+      slot.width,
+      slot.height,
+      slot.radius,
+    )
+    context.clip()
+    context.drawImage(profile, drawX, drawY, drawWidth, drawHeight)
+    context.restore()
+
+    return await canvasToPngBlob(canvas)
+  } finally {
+    URL.revokeObjectURL(baseImageUrl)
+  }
 }
 
 function App() {
@@ -441,7 +603,9 @@ function moveDate(amount: number) {
       // 프로필 이미지와 웹 폰트가 실제로 렌더링된 뒤 캡처함
       await waitForCaptureAssets(captureRef.current)
 
-      const blob = await toBlob(captureRef.current, {
+      const profileSlot = getCaptureProfileSlot(captureRef.current)
+
+      const baseBlob = await toBlob(captureRef.current, {
         width: 1080,
         height: 1350,
         pixelRatio: 1,
@@ -450,9 +614,20 @@ function moveDate(amount: number) {
         cacheBust: false,
       })
 
-      if (!blob) {
+      if (!baseBlob) {
         throw new Error('Could not create the image')
       }
+
+      // iOS Safari에서는 html-to-image가 DOM 안의 이미지를 간헐적으로 누락함
+      // 따라서 전체 화면을 먼저 만든 다음 프로필 이미지를 최종 PNG에 직접 합성함
+      const blob =
+        profileImage && profileSlot
+          ? await compositeProfileImage(
+              baseBlob,
+              profileImage,
+              profileSlot,
+            )
+          : baseBlob
 
       const fileName = `samdolist-${selectedDate}.png`
       const imageUrl = URL.createObjectURL(blob)
@@ -1300,7 +1475,10 @@ function CaptureView({
               >
                 <div className="flex h-full items-center gap-5">
                   <div className="shrink-0">
-                    <div className="grid h-[128px] w-[128px] place-items-center overflow-hidden rounded-[22px] bg-neutral-50 text-neutral-400">
+                    <div
+                      data-capture-profile-slot
+                      className="grid h-[128px] w-[128px] place-items-center overflow-hidden rounded-[22px] bg-neutral-50 text-neutral-400"
+                    >
                       {profileImage ? (
                         <CaptureProfileCanvas
                           src={profileImage}
