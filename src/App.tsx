@@ -94,7 +94,39 @@ const nextStatus: Record<TaskStatus, TaskStatus> = {
   partial: 'todo',
 }
 
+async function waitForCaptureAssets(root: HTMLElement) {
+  await document.fonts.ready
 
+  const images = Array.from(root.querySelectorAll('img'))
+
+  await Promise.all(
+    images.map(async (image) => {
+      if (!image.complete) {
+        await new Promise<void>((resolve) => {
+          const finish = () => resolve()
+
+          image.addEventListener('load', finish, { once: true })
+          image.addEventListener('error', finish, { once: true })
+        })
+      }
+
+      if (typeof image.decode === 'function') {
+        try {
+          await image.decode()
+        } catch {
+          // 브라우저가 이미지를 화면에는 표시하지만 decode를 거부하는 경우는 무시함
+        }
+      }
+    }),
+  )
+
+  // 오프스크린 캡처 DOM의 최신 레이아웃이 적용될 시간을 한 프레임 확보함
+  await new Promise<void>((resolve) =>
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => resolve()),
+    ),
+  )
+}
 
 function App() {
   const [selectedDate, setSelectedDate] = useState(formatDateLocal())
@@ -237,21 +269,22 @@ function moveDate(amount: number) {
     reader.readAsDataURL(file)
   }
 
-    async function savePlannerImage() {
+  async function savePlannerImage() {
     if (!captureRef.current || captureSaving) return
 
     setCaptureSaving(true)
 
     try {
-      // 웹 폰트가 있다면 폰트 로딩이 끝난 뒤 캡처
-      await document.fonts.ready
+      // 프로필 이미지와 웹 폰트가 실제로 렌더링된 뒤 캡처함
+      await waitForCaptureAssets(captureRef.current)
 
       const blob = await toBlob(captureRef.current, {
         width: 1080,
         height: 1350,
         pixelRatio: 1,
         backgroundColor: '#f5f5f5',
-        cacheBust: true,
+        // data URL 이미지에 cacheBust가 붙으면서 캡처에서 누락되는 경우를 방지함
+        cacheBust: false,
       })
 
       if (!blob) {
@@ -259,40 +292,19 @@ function moveDate(amount: number) {
       }
 
       const fileName = `samdolist-${selectedDate}.png`
-      const file = new File([blob], fileName, {
-        type: 'image/png',
-      })
-
-      // 아이폰·모바일에서 파일 공유를 지원하면 공유 메뉴 사용
-      if (
-        navigator.canShare &&
-        navigator.canShare({
-          files: [file],
-        })
-      ) {
-        await navigator.share({
-          files: [file],
-          title: `SamdoList ${selectedDate}`,
-        })
-
-        return
-      }
-
-      // 공유를 지원하지 않으면 일반 파일 다운로드
       const imageUrl = URL.createObjectURL(blob)
       const link = document.createElement('a')
 
+      // 모바일에서도 공유 창을 띄우지 않고 바로 다운로드함.
       link.href = imageUrl
       link.download = fileName
+      document.body.appendChild(link)
       link.click()
+      link.remove()
 
-      URL.revokeObjectURL(imageUrl)
+      // 클릭 이벤트가 처리된 뒤 URL을 해제함.
+      window.setTimeout(() => URL.revokeObjectURL(imageUrl), 1000)
     } catch (error) {
-      // 사용자가 모바일 공유 메뉴를 직접 닫은 경우는 오류창을 띄우지 않음
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        return
-      }
-
       console.error(error)
       alert('이미지 저장 중 오류가 발생함.')
     } finally {
@@ -944,6 +956,49 @@ function CaptureView({
   completionRate,
 }: CaptureViewProps) {
   const currentRecord = records.current
+  const captureBodyHeight = 1166
+  const summaryCardHeight = 184
+  const leftColumnGap = 20
+  const timePanelHeight = captureBodyHeight - summaryCardHeight - leftColumnGap
+
+  const sleepDurationText = useMemo(() => {
+    const previousSleepTime = records.prev?.sleepTime
+    const currentWakeTime = currentRecord?.wakeTime
+
+    if (!previousSleepTime || !currentWakeTime) {
+      return 'XXh XXm'
+    }
+
+    const prevDate = addDays(selectedDate, -1)
+    const sleepStart = sleepStartDateTime(
+      prevDate,
+      previousSleepTime,
+      dayStart,
+    ).getTime()
+
+    const wakeTime = localDateAt(
+      selectedDate,
+      currentWakeTime,
+    ).getTime()
+
+    if (wakeTime <= sleepStart) {
+      return 'XXh XXm'
+    }
+
+    const durationMinutes = Math.round(
+      (wakeTime - sleepStart) / (1000 * 60),
+    )
+
+    const hours = Math.floor(durationMinutes / 60)
+    const minutes = durationMinutes % 60
+
+    return `${hours}h ${String(minutes).padStart(2, '0')}m`
+  }, [
+    currentRecord?.wakeTime,
+    dayStart,
+    records.prev?.sleepTime,
+    selectedDate,
+  ])
 
   const noopCreate = () => {}
   const noopEdit = () => {}
@@ -956,106 +1011,149 @@ function CaptureView({
     >
       <div
         ref={captureRef}
-        className="overflow-hidden bg-neutral-100 p-8"
+        className="overflow-hidden bg-neutral-100"
         style={{
           width: 1080,
           height: 1350,
         }}
       >
         <div
-          className="mb-5 text-6xl font-black"
+          className="mb-6 bg-white px-8 pb-5 pt-7"
           style={{
-            color: theme.primaryBg,
-            letterSpacing: '-0.04em',
+            boxShadow: '0 10px 18px rgba(15, 23, 42, 0.08)',
           }}
         >
-          {displayDate}
-        </div>
-
-        <div className="mb-5 rounded-3xl border border-neutral-200 bg-white p-5">
-          <div className="flex gap-5">
-            <div className="shrink-0">
-              <div className="grid h-36 w-36 place-items-center overflow-hidden rounded-2xl bg-white text-neutral-400">
-                {profileImage ? (
-                  <img
-                    src={profileImage}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span className="text-lg font-bold">No Image</span>
-                )}
-              </div>
+          <div className="flex h-[88px] min-w-0 items-end gap-6">
+            <div
+              className="shrink-0 font-black leading-none"
+              style={{
+                color: theme.primaryBg,
+                fontSize: 78,
+                letterSpacing: '-0.055em',
+              }}
+            >
+              {displayDate}
             </div>
 
-            <div className="min-w-0 flex-1">
-              <div className="mb-5">
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-2xl font-black">
-                    Progress Bar
-                  </span>
-
-                  <span className="text-3xl font-black">
-                    {completionRate}%
-                  </span>
+            <div className="flex min-h-[56px] min-w-0 flex-1 items-end pb-1">
+              {currentRecord?.memo?.trim() ? (
+                <div
+                  className="truncate font-bold text-neutral-500"
+                  style={{
+                    fontSize: 27,
+                    letterSpacing: '0.01em',
+                  }}
+                >
+                  {currentRecord.memo.trim()}
                 </div>
-
-                <div className="h-5 overflow-hidden rounded-full bg-neutral-200">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${completionRate}%`,
-                      backgroundColor: theme.primaryBg,
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-5">
-                <div>
-                  <div className="text-xl font-black">Wake-Up</div>
-                  <div className="mt-1 text-2xl font-bold text-neutral-500">
-                    {currentRecord?.wakeTime || 'XX:XX'}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xl font-black">Sleep</div>
-                  <div className="mt-1 text-2xl font-bold text-neutral-500">
-                    {currentRecord?.sleepTime || 'XX:XX'}
-                  </div>
-                </div>
-              </div>
+              ) : null}
             </div>
           </div>
         </div>
 
-        <div
-          className="grid grid-cols-2 gap-5"
-          style={{
-            height: 1040,
-          }}
-        >
-          <TimePanel
-            selectedDate={selectedDate}
-            dayStart={dayStart}
-            categories={categories}
-            tasks={tasks}
-            records={records}
-            captureMode
-            hourHeight={34}
-            extraLaneHeight={12}
-          />
+        <div className="px-6 pb-6">
+          <div
+            className="grid gap-5"
+            style={{
+              height: captureBodyHeight,
+              gridTemplateColumns: '6fr 4fr',
+            }}
+          >
+            <div className="flex h-full flex-col gap-5">
+              <div
+                className="rounded-[30px] border border-neutral-200 bg-white px-5 py-4"
+                style={{ height: summaryCardHeight }}
+              >
+                <div className="flex h-full items-center gap-5">
+                  <div className="shrink-0">
+                    <div className="grid h-[128px] w-[128px] place-items-center overflow-hidden rounded-[22px] bg-neutral-50 text-neutral-400">
+                      {profileImage ? (
+                        <img
+                          src={profileImage}
+                          alt=""
+                          draggable={false}
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span className="text-base font-bold">No Image</span>
+                      )}
+                    </div>
+                  </div>
 
-          <TodoPanel
-            categories={categories}
-            tasks={tasks}
-            theme={theme}
-            onCreateTask={noopCreate}
-            onEditTask={noopEdit}
-            onCycleStatus={noopStatus}
-            captureMode
-          />
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-4">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-[26px] font-black leading-none">
+                          Progress Bar
+                        </span>
+
+                        <span className="text-[31px] font-black leading-none">
+                          {completionRate}%
+                        </span>
+                      </div>
+
+                      <div className="h-5 overflow-hidden rounded-full bg-neutral-200">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${completionRate}%`,
+                            backgroundColor: theme.primaryBg,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-6">
+                      <div>
+                        <div className="text-[20px] font-black leading-none">Sleep Time</div>
+                        <div className="mt-2 text-[24px] font-bold leading-none text-neutral-500">
+                          {sleepDurationText}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-[20px] font-black leading-none">Wake-Up</div>
+                        <div className="mt-2 text-[24px] font-bold leading-none text-neutral-500">
+                          {currentRecord?.wakeTime || 'XX:XX'}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="text-[20px] font-black leading-none">Sleep</div>
+                        <div className="mt-2 text-[24px] font-bold leading-none text-neutral-500">
+                          {currentRecord?.sleepTime || 'XX:XX'}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1">
+                <TimePanel
+                  selectedDate={selectedDate}
+                  dayStart={dayStart}
+                  categories={categories}
+                  tasks={tasks}
+                  records={records}
+                  captureMode
+                  hourHeight={42}
+                  extraLaneHeight={26}
+                  captureTargetHeight={timePanelHeight}
+                />
+              </div>
+            </div>
+
+            <TodoPanel
+              categories={categories}
+              tasks={tasks}
+              theme={theme}
+              onCreateTask={noopCreate}
+              onEditTask={noopEdit}
+              onCycleStatus={noopStatus}
+              captureMode
+            />
+          </div>
         </div>
       </div>
     </div>
@@ -1071,6 +1169,7 @@ type TimePanelProps = {
   captureMode?: boolean
   hourHeight?: number
   extraLaneHeight?: number
+  captureTargetHeight?: number
 }
 
 function TimePanel({
@@ -1082,12 +1181,117 @@ function TimePanel({
   captureMode = false,
   hourHeight = HOUR_HEIGHT,
   extraLaneHeight = EXTRA_LANE_HEIGHT,
+  captureTargetHeight,
 }: TimePanelProps) {
   const categoryMap = useMemo(() => {
       return new Map(categories.map((category) => [category.id, category]))
     }, [categories])
 
     const dayStartMinutes = timeToMinutes(dayStart)
+
+    const sleepLayout = useMemo(() => {
+      const blocks: Array<{
+        hourIndex: number
+        leftPercent: number
+        widthPercent: number
+      }> = []
+
+      // 각 시간 줄에서 수면으로 칠해지는 비율. 0은 전부 깨어 있음, 1은 전부 수면임.
+      const sleepRatios = Array.from({ length: 24 }, () => 0)
+
+      const prevDate = addDays(selectedDate, -1)
+      const nextDate = addDays(selectedDate, 1)
+
+      const gridStart = localDateAt(selectedDate, dayStart).getTime()
+      const gridEnd = gridStart + 24 * 60 * 60 * 1000
+
+      function addSleepRange(startMs: number, endMs: number) {
+        const start = Math.max(startMs, gridStart)
+        const end = Math.min(endMs, gridEnd)
+
+        if (end <= start) return
+
+        let cursor = (start - gridStart) / 1000 / 60
+        const endOffset = (end - gridStart) / 1000 / 60
+
+        while (cursor < endOffset) {
+          const hourStart = Math.floor(cursor / 60) * 60
+          const hourEnd = hourStart + 60
+          const segmentEnd = Math.min(endOffset, hourEnd)
+
+          const hourIndex = Math.floor(hourStart / 60)
+          const leftPercent = ((cursor - hourStart) / 60) * 100
+          const widthPercent = ((segmentEnd - cursor) / 60) * 100
+
+          blocks.push({
+            hourIndex,
+            leftPercent,
+            widthPercent,
+          })
+
+          if (sleepRatios[hourIndex] !== undefined) {
+            sleepRatios[hourIndex] = Math.min(
+              1,
+              sleepRatios[hourIndex] + widthPercent / 100,
+            )
+          }
+
+          cursor = segmentEnd
+        }
+      }
+
+      if (records.current?.wakeTime) {
+        const wakeTime = localDateAt(
+          selectedDate,
+          records.current.wakeTime,
+        ).getTime()
+
+        if (records.prev?.sleepTime) {
+          const sleepTime = sleepStartDateTime(
+            prevDate,
+            records.prev.sleepTime,
+            dayStart,
+          ).getTime()
+
+          addSleepRange(sleepTime, wakeTime)
+        } else {
+          addSleepRange(gridStart, wakeTime)
+        }
+      }
+
+      if (records.current?.sleepTime) {
+        const sleepTime = sleepStartDateTime(
+          selectedDate,
+          records.current.sleepTime,
+          dayStart,
+        ).getTime()
+
+        if (records.next?.wakeTime) {
+          const wakeTime = localDateAt(
+            nextDate,
+            records.next.wakeTime,
+          ).getTime()
+
+          addSleepRange(sleepTime, wakeTime)
+        } else {
+          addSleepRange(sleepTime, gridEnd)
+        }
+      }
+
+      return {
+        blocks,
+        sleepRatios,
+      }
+    }, [
+      dayStart,
+      records.current?.wakeTime,
+      records.current?.sleepTime,
+      records.next?.wakeTime,
+      records.prev?.sleepTime,
+      selectedDate,
+    ])
+
+    const { blocks: sleepBlocks, sleepRatios } = sleepLayout
 
     const timeLayout = useMemo(() => {
       type TaskRange = {
@@ -1251,53 +1455,130 @@ function TimePanel({
           const maximumOverlap =
             getMaximumOverlap(segments)
 
+          const displayLaneCount = Math.min(
+            Math.max(1, maximumOverlap),
+            3,
+          )
 
-          const height =
-            maximumOverlap <= 2
-              ? hourHeight
-              : hourHeight  +
-                (maximumOverlap - 2) * extraLaneHeight
+          const overlapExtra =
+            displayLaneCount <= 2
+              ? 0
+              : extraLaneHeight +
+                (displayLaneCount - 3) * extraLaneHeight
 
           const laneEndOffsets: number[] = []
 
-          const assignedSegments = [...segments]
+          const visibleSegments = [...segments]
             .sort((a, b) =>
               compareTaskRange(a.range, b.range),
             )
-            .map((segment) => {
+            .slice(0, displayLaneCount)
 
-              let laneIndex = laneEndOffsets.findIndex(
-                (endOffset) =>
-                  endOffset <= segment.segmentStart,
-              )
+          const assignedSegments = visibleSegments.map((segment) => {
+            let laneIndex = laneEndOffsets.findIndex(
+              (endOffset) =>
+                endOffset <= segment.segmentStart,
+            )
 
-              if (laneIndex === -1) {
-                laneIndex = laneEndOffsets.length
-              }
+            if (laneIndex === -1) {
+              laneIndex = laneEndOffsets.length
+            }
 
-              laneEndOffsets[laneIndex] =
-                segment.segmentEnd
+            laneEndOffsets[laneIndex] =
+              segment.segmentEnd
 
-              return {
-                ...segment,
-                laneIndex,
-              }
-            })
+            return {
+              ...segment,
+              laneIndex,
+            }
+          })
 
           return {
             hourIndex,
-            height,
-            laneCount: maximumOverlap,
+            overlapExtra,
+            laneCount: displayLaneCount,
             assignedSegments,
           }
         },
       )
 
-      
+      const resolvedHourData = (() => {
+        if (!captureMode || !captureTargetHeight) {
+          return rawHourData.map((hourData) => ({
+            ...hourData,
+            height: hourHeight + hourData.overlapExtra,
+          }))
+        }
+
+        const totalOverlapExtra = rawHourData.reduce(
+          (sum, hourData) => sum + hourData.overlapExtra,
+          0,
+        )
+
+        const sleepUnitCount = sleepRatios.reduce(
+          (sum, ratio) => sum + ratio,
+          0,
+        )
+        const awakeUnitCount = 24 - sleepUnitCount
+
+        const availableBaseHeight = Math.max(
+          0,
+          captureTargetHeight - totalOverlapExtra,
+        )
+
+        // 완전히 자는 한 시간은 작게 고정하고, 남은 높이를 깨어 있는 시간에 균등 배분함.
+        let compactSleepHourHeight = Math.min(24, availableBaseHeight / 24)
+        let awakeHourHeight = compactSleepHourHeight
+
+        if (awakeUnitCount > 0) {
+          awakeHourHeight =
+            (availableBaseHeight -
+              sleepUnitCount * compactSleepHourHeight) /
+            awakeUnitCount
+
+          if (awakeHourHeight < compactSleepHourHeight) {
+            compactSleepHourHeight = availableBaseHeight / 24
+            awakeHourHeight = compactSleepHourHeight
+          }
+        } else if (sleepUnitCount > 0) {
+          compactSleepHourHeight =
+            availableBaseHeight / sleepUnitCount
+          awakeHourHeight = compactSleepHourHeight
+        }
+
+        const preliminaryHourData = rawHourData.map((hourData) => {
+          const sleepRatio = sleepRatios[hourData.hourIndex] ?? 0
+          const awakeRatio = 1 - sleepRatio
+
+          return {
+            ...hourData,
+            height:
+              sleepRatio * compactSleepHourHeight +
+              awakeRatio * awakeHourHeight +
+              hourData.overlapExtra,
+          }
+        })
+
+        const preliminaryTotalHeight = preliminaryHourData.reduce(
+          (sum, hourData) => sum + hourData.height,
+          0,
+        )
+
+        const heightScale =
+          preliminaryTotalHeight > 0
+            ? captureTargetHeight / preliminaryTotalHeight
+            : 1
+
+        return preliminaryHourData.map((hourData) => ({
+          ...hourData,
+          height: hourData.height * heightScale,
+        }))
+      })()
+
       let accumulatedTop = 0
 
       const hourLayouts: HourLayout[] =
-        rawHourData.map((hourData) => {
+        resolvedHourData.map((hourData) => {
           const layout: HourLayout = {
             hourIndex: hourData.hourIndex,
             top: accumulatedTop,
@@ -1313,7 +1594,7 @@ function TimePanel({
       const titleShownTasks = new Set<string>()
       const taskBlocks: TaskBlock[] = []
 
-      rawHourData.forEach((hourData) => {
+      resolvedHourData.forEach((hourData) => {
         const hourStart = hourData.hourIndex * 60
 
         hourData.assignedSegments.forEach(
@@ -1350,7 +1631,15 @@ function TimePanel({
         // 모든 시간 줄 높이를 더한 최종 타임 탭 높이
         totalHeight: accumulatedTop,
       }
-    }, [tasks, dayStart, hourHeight, extraLaneHeight])
+    }, [
+      tasks,
+      dayStart,
+      hourHeight,
+      extraLaneHeight,
+      captureMode,
+      captureTargetHeight,
+      sleepRatios,
+    ])
 
     const {
       hourLayouts,
@@ -1358,108 +1647,20 @@ function TimePanel({
       totalHeight,
     } = timeLayout
 
-    const sleepBlocks = useMemo(() => {
-      const blocks: Array<{
-        hourIndex: number
-        leftPercent: number
-        widthPercent: number
-      }> = []
-
-      const prevDate = addDays(selectedDate, -1)
-      const nextDate = addDays(selectedDate, 1)
-
-      // 시간 탭 시작 시각
-      // 예: 2026-07-08 08:00
-      const gridStart = localDateAt(selectedDate, dayStart).getTime()
-
-      // 시간 탭 종료 시각
-      // 시작 시각으로부터 24시간 뒤
-      const gridEnd = gridStart + 24 * 60 * 60 * 1000
-
-      function addSleepRange(startMs: number, endMs: number) {
-        // 화면 범위를 벗어난 부분은 잘라냄
-        const start = Math.max(startMs, gridStart)
-        const end = Math.min(endMs, gridEnd)
-
-        if (end <= start) return
-
-        // gridStart 기준으로 몇 분 떨어져 있는지 계산
-        let cursor = (start - gridStart) / 1000 / 60
-        const endOffset = (end - gridStart) / 1000 / 60
-
-        while (cursor < endOffset) {
-          // 현재 cursor가 속한 시간 줄의 시작
-          // 예: cursor = 150이면 2시간 30분 지점 → hourStart = 120
-          const hourStart = Math.floor(cursor / 60) * 60
-          const hourEnd = hourStart + 60
-
-          const segmentEnd = Math.min(endOffset, hourEnd)
-
-          const hourIndex = Math.floor(hourStart / 60)
-          const leftPercent = ((cursor - hourStart) / 60) * 100
-          const widthPercent = ((segmentEnd - cursor) / 60) * 100
-
-          blocks.push({
-            hourIndex,
-            leftPercent,
-            widthPercent,
-          })
-
-          cursor = segmentEnd
-        }
-      }
-
-      if (records.current?.wakeTime) {
-        const wakeTime = localDateAt(selectedDate, records.current.wakeTime).getTime()
-
-        if (records.prev?.sleepTime) {
-          const sleepTime = sleepStartDateTime(
-            prevDate,
-            records.prev.sleepTime,
-            dayStart,
-          ).getTime()
-
-          addSleepRange(sleepTime, wakeTime)
-        } else {
-          addSleepRange(gridStart, wakeTime)
-        }
-      }
-
-      if (records.current?.sleepTime) {
-        const sleepTime = sleepStartDateTime(
-          selectedDate,
-          records.current.sleepTime,
-          dayStart,
-        ).getTime()
-
-        if (records.next?.wakeTime) {
-          const wakeTime = localDateAt(nextDate, records.next.wakeTime).getTime()
-          addSleepRange(sleepTime, wakeTime)
-        } else {
-          addSleepRange(sleepTime, gridEnd)
-        }
-      }
-
-      return blocks
-    }, [
-      dayStart,
-      records.current?.wakeTime,
-      records.current?.sleepTime,
-      records.next?.wakeTime,
-      records.prev?.sleepTime,
-      selectedDate,
-    ])
-
   return (
-    <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
-
+    <section
+      className={clsx(
+        'overflow-hidden rounded-2xl border border-neutral-200 bg-white',
+        captureMode && 'h-full',
+      )}
+    >
       <div
-          className={clsx(
-            captureMode
-              ? 'overflow-hidden'
-              : 'max-h-[72vh] overflow-auto',
-          )}
-        >
+        className={clsx(
+          captureMode
+            ? 'h-full overflow-hidden'
+            : 'max-h-[72vh] overflow-auto',
+        )}
+      >
         <div className="relative" style={{ height: totalHeight }}>
           {hourLayouts.map((hourLayout) => {
             const { hourIndex, top, height } = hourLayout
@@ -1479,11 +1680,31 @@ function TimePanel({
                   height,
                 }}
               >
-                <div className="absolute left-0 top-1 w-6 text-right text-sm font-black text-neutral-400">
+                <div
+                  className={clsx(
+                    'absolute left-0 font-black leading-none text-neutral-400',
+                    captureMode
+                      ? 'flex w-12 items-center justify-center text-center text-[22px]'
+                      : 'top-1 w-6 text-center text-sm',
+                  )}
+                  style={
+                    captureMode
+                      ? {
+                          top: '50%',
+                          transform: 'translateY(-50%)',
+                        }
+                      : undefined
+                  }
+                >
                   {label.slice(0, 2)}
                 </div>
 
-                <div className="ml-7 grid h-full grid-cols-6">
+                <div
+                  className={clsx(
+                    'grid h-full grid-cols-6',
+                    captureMode ? 'ml-12' : 'ml-7',
+                  )}
+                >
                   {Array.from({ length: 6 }).map(
                     (__, cellIndex) => (
                       <div
@@ -1506,7 +1727,10 @@ function TimePanel({
             return (
               <div
                 key={index}
-                className="pointer-events-none absolute left-7 right-0 z-0"
+                className={clsx(
+                  'pointer-events-none absolute right-0 z-0',
+                  captureMode ? 'left-12' : 'left-7',
+                )}
                 style={{
                   // 늘어난 시간 줄 높이에 맞춰 수면 배경도 같이 늘림
                   top: hourLayout.top,
@@ -1552,8 +1776,8 @@ function TimePanel({
               /*
               * 시간 줄 안쪽 여백과 투두 사이 간격
               */
-              const verticalPadding = 3
-              const laneGap = 2
+              const verticalPadding = captureMode ? 4 : 3
+              const laneGap = captureMode ? 3 : 2
 
               /*
               * 현재 시간 줄 높이를 겹치는 투두 개수만큼 나눔.
@@ -1576,7 +1800,10 @@ function TimePanel({
               return (
                 <div
                   key={`${taskKey}-${hourIndex}`}
-                  className="absolute left-8 right-2"
+                  className={clsx(
+                    'absolute right-2',
+                    captureMode ? 'left-13' : 'left-8',
+                  )}
                   style={{
                     // 동적으로 계산된 시간 줄 위치와 높이 사용
                     top: hourLayout.top,
@@ -1584,7 +1811,12 @@ function TimePanel({
                   }}
                 >
                   <div
-                    className="absolute overflow-hidden rounded-md border-l-4 px-1.5 py-0.5 text-xs font-black leading-tight shadow-sm"
+                    className={clsx(
+                      'absolute overflow-hidden rounded-md border-l-4 font-black shadow-sm',
+                      captureMode
+                        ? 'flex items-center px-2 py-0.5'
+                        : 'px-1.5 py-0.5 text-xs leading-tight',
+                    )}
                     style={{
                       /*
                       * 시간 위치와 길이는 가로축으로 유지함.
@@ -1605,7 +1837,12 @@ function TimePanel({
                     {showTitle && (
                       <div
                         className={clsx(
-                          'truncate text-[10px] font-bold leading-tight',
+                          'truncate w-full font-bold',
+                          captureMode
+                            ? laneCount >= 3
+                              ? 'text-[12px] leading-none'
+                              : 'text-[16px] leading-none'
+                            : 'text-[10px] leading-tight',
                           task.status === 'partial' &&
                             'text-neutral-400',
                         )}
@@ -1643,55 +1880,83 @@ function TodoPanel({
   onCycleStatus,
   captureMode = false,
 }: TodoPanelProps) {
-  // 모든 카테고리를 기본으로 보여줌
-  // 해당 카테고리에 투두가 없어도 화면에 표시됨
-  const grouped = categories.map((category) => ({
-    category,
-    tasks: tasks.filter((task) => task.categoryId === category.id),
-  }))
+  // 일반 화면에서는 모든 카테고리를 보여주고,
+  // 캡처 화면에서는 투두가 있는 카테고리만 보여줌.
+  const grouped = categories
+    .map((category) => ({
+      category,
+      tasks: tasks.filter((task) => task.categoryId === category.id),
+    }))
+    .filter(({ tasks: categoryTasks }) =>
+      captureMode ? categoryTasks.length > 0 : true,
+    )
 
   const uncategorized = tasks.filter(
     (task) => !categories.some((category) => category.id === task.categoryId),
   )
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
+    <section
+      className={clsx(
+        'overflow-hidden rounded-2xl border border-neutral-200 bg-white',
+        captureMode && 'h-full',
+      )}
+    >
       {/* 투두리스트 탭 제목 제거 */}
       <div
-          className={clsx(
-            'p-3',
-            captureMode
-              ? 'overflow-hidden'
-              : 'max-h-[72vh] overflow-auto',
-          )}
-        >
-        {categories.length === 0 && (
+        className={clsx(
+          captureMode
+            ? 'h-full overflow-hidden px-4 py-3.5'
+            : 'max-h-[72vh] overflow-auto p-3',
+        )}
+      >
+        {!captureMode && categories.length === 0 && (
           <div className="rounded-xl border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">
             empty category
           </div>
         )}
 
         {grouped.map(({ category, tasks }) => (
-          <div key={category.id} className="mb-3">
+          <div
+            key={category.id}
+            className={captureMode ? 'mb-4.5' : 'mb-3'}
+          >
             {/* 카테고리 이름을 누르면 해당 카테고리로 새 투두 생성 */}
             <button
               type="button"
               onClick={() => onCreateTask(category)}
-              className="mb-1 flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left hover:bg-neutral-100"
+              className={clsx(
+                'flex w-full items-center rounded-xl text-left hover:bg-neutral-100',
+                captureMode
+                  ? 'mb-2 gap-2 px-2 py-1.5'
+                  : 'mb-1 gap-2 px-2 py-2',
+              )}
             >
               <span
-                className="h-3 w-3 rounded-full"
+                className={clsx(
+                  'rounded-full',
+                  captureMode ? 'h-[13px] w-[13px]' : 'h-3 w-3',
+                )}
                 style={{ backgroundColor: category.color }}
               />
 
-              <span className="text-base font-black">{category.name}</span>
+              <span
+                className={clsx(
+                  'font-black',
+                  captureMode ? 'text-[25px]' : 'text-base',
+                )}
+              >
+                {category.name}
+              </span>
 
             </button>
 
             {tasks.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-neutral-200 p-4 text-sm text-neutral-400">
-                empty
-              </div>
+              !captureMode && (
+                <div className="rounded-xl border border-dashed border-neutral-200 p-4 text-sm text-neutral-400">
+                  empty
+                </div>
+              )
             ) : (
               <div className="divide-y divide-neutral-200">
                 {tasks.map((task) => (
@@ -1701,6 +1966,7 @@ function TodoPanel({
                     theme={theme}
                     onCycleStatus={onCycleStatus}
                     onEditTask={onEditTask}
+                    captureMode={captureMode}
                   />
                 ))}
               </div>
@@ -1710,7 +1976,14 @@ function TodoPanel({
 
         {uncategorized.length > 0 && (
           <div className="mb-5">
-            <h3 className="mb-2 text-lg font-black">삭제된 카테고리</h3>
+            <h3
+              className={clsx(
+                'mb-2 font-black',
+                captureMode ? 'text-2xl' : 'text-lg',
+              )}
+            >
+              삭제된 카테고리
+            </h3>
 
             <div className="divide-y divide-neutral-200">
               {uncategorized.map((task) => (
@@ -1720,6 +1993,7 @@ function TodoPanel({
                   theme={theme}
                   onCycleStatus={onCycleStatus}
                   onEditTask={onEditTask}
+                  captureMode={captureMode}
                 />
               ))}
             </div>
@@ -1735,6 +2009,7 @@ type TodoItemProps = {
   theme: ThemeColors
   onCycleStatus: (task: PlannerTask) => void
   onEditTask: (task: PlannerTask) => void
+  captureMode?: boolean
 }
 
 function TodoItem({
@@ -1742,6 +2017,7 @@ function TodoItem({
   theme,
   onCycleStatus,
   onEditTask,
+  captureMode = false,
 }: TodoItemProps) {
   const statusText = task.status === 'done' ? 'O' : task.status === 'partial' ? '△' : ''
 
@@ -1755,12 +2031,22 @@ function TodoItem({
   const hasTime = Boolean(task.startTime && task.endTime)
 
   return (
-    <div className="flex items-center gap-2 py-2">
+    <div
+      className={clsx(
+        'flex items-center',
+        captureMode ? 'gap-3 py-2.5' : 'gap-2 py-2',
+      )}
+    >
       {/* 체크박스만 상태 변경 담당 */}
       <button
         type="button"
         onClick={() => onCycleStatus(task)}
-        className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border-2 text-sm font-black"
+        className={clsx(
+          'grid shrink-0 place-items-center font-black',
+          captureMode
+            ? 'h-[52px] w-[52px] rounded-[17px] border-[3px] text-[20px]'
+            : 'h-9 w-9 rounded-xl border-2 text-sm',
+        )}
         style={{
           borderColor: statusColor,
           color: statusColor,
@@ -1773,11 +2059,15 @@ function TodoItem({
       <button
         type="button"
         onClick={() => onEditTask(task)}
-        className="min-w-0 flex-1 rounded-xl px-2 py-1 text-left hover:bg-neutral-100"
+        className={clsx(
+          'min-w-0 flex-1 rounded-xl text-left hover:bg-neutral-100',
+          captureMode ? 'px-2 py-1.5' : 'px-2 py-1',
+        )}
       >
         <div
           className={clsx(
-            'truncate text-sm font-bold leading-tight',
+            'truncate font-bold leading-tight',
+            captureMode ? 'text-[20px]' : 'text-sm',
             task.status === 'partial' && 'text-neutral-600',
           )}
         >
@@ -1785,7 +2075,14 @@ function TodoItem({
         </div>
 
         {hasTime && (
-          <div className="mt-0.5 text-xs font-semibold text-neutral-400">
+          <div
+            className={clsx(
+              'font-semibold text-neutral-400',
+              captureMode
+                ? 'mt-1 text-[15px]'
+                : 'mt-0.5 text-xs',
+            )}
+          >
             {task.startTime} - {task.endTime}
           </div>
         )}
