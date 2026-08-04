@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { ChevronLeft, ChevronRight, GripVertical, ImageDown, Menu, X } from 'lucide-react'
+import { ChevronDown, ChevronLeft, ChevronRight, GripVertical, ImageDown, Menu, X } from 'lucide-react'
 import {toBlob} from 'html-to-image'
 import { useLiveQuery } from 'dexie-react-hooks'
 import clsx from 'clsx'
@@ -64,6 +64,9 @@ const THEME_SETTING_KEYS = {
 // 상단 카드 왼쪽에 표시할 이미지 저장 key
 const PROFILE_IMAGE_KEY = 'profile.image'
 const CATEGORY_ORDER_KEY = 'category.order'
+const TODO_FOLDED_CATEGORY_IDS_KEY = 'todo.foldedCategoryIds'
+const CAPTURE_TIME_LABELS_KEY = 'capture.showTimeLabels'
+const CAPTURE_HIDDEN_CATEGORY_IDS_KEY = 'capture.hiddenCategoryIds'
 
 // 00시 ~ 23시
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) =>
@@ -74,6 +77,18 @@ const HOUR_OPTIONS = Array.from({ length: 24 }, (_, index) =>
 const MINUTE_OPTIONS = Array.from({ length: 12 }, (_, index) =>
   String(index * 5).padStart(2, '0'),
 )
+
+function parseStoredNumberArray(value?: string) {
+  try {
+    const parsed = JSON.parse(value ?? '[]')
+
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is number => typeof item === 'number')
+      : []
+  } catch {
+    return []
+  }
+}
 
 function getCurrentFiveMinuteTime() {
   const now = new Date()
@@ -93,6 +108,73 @@ const nextStatus: Record<TaskStatus, TaskStatus> = {
   todo: 'done',
   done: 'partial',
   partial: 'todo',
+}
+
+type CaptureProfileCanvasProps = {
+  src: string
+  size: number
+}
+
+function CaptureProfileCanvas({ src, size }: CaptureProfileCanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const context = canvas.getContext('2d')
+    if (!context) return
+
+    canvas.dataset.captureReady = 'false'
+    context.clearRect(0, 0, size, size)
+
+    let cancelled = false
+    const image = new Image()
+
+    const finish = () => {
+      if (cancelled) return
+      canvas.dataset.captureReady = 'true'
+      canvas.dispatchEvent(new Event('capture-profile-ready'))
+    }
+
+    image.onload = () => {
+      if (cancelled) return
+
+      const scale = Math.max(
+        size / image.naturalWidth,
+        size / image.naturalHeight,
+      )
+      const drawWidth = image.naturalWidth * scale
+      const drawHeight = image.naturalHeight * scale
+      const drawX = (size - drawWidth) / 2
+      const drawY = (size - drawHeight) / 2
+
+      context.clearRect(0, 0, size, size)
+      context.drawImage(image, drawX, drawY, drawWidth, drawHeight)
+      finish()
+    }
+
+    image.onerror = finish
+    image.src = src
+
+    return () => {
+      cancelled = true
+      image.onload = null
+      image.onerror = null
+    }
+  }, [size, src])
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={size}
+      height={size}
+      data-capture-profile
+      data-capture-ready="false"
+      className="h-full w-full"
+      style={{ display: 'block' }}
+    />
+  )
 }
 
 async function waitForCaptureAssets(root: HTMLElement) {
@@ -121,10 +203,35 @@ async function waitForCaptureAssets(root: HTMLElement) {
     }),
   )
 
-  // 오프스크린 캡처 DOM의 최신 레이아웃이 적용될 시간을 한 프레임 확보함
+  const captureCanvases = Array.from(
+    root.querySelectorAll<HTMLCanvasElement>('canvas[data-capture-profile]'),
+  )
+
+  await Promise.all(
+    captureCanvases.map(async (canvas) => {
+      if (canvas.dataset.captureReady === 'true') return
+
+      await new Promise<void>((resolve) => {
+        const timeoutId = window.setTimeout(resolve, 3000)
+
+        canvas.addEventListener(
+          'capture-profile-ready',
+          () => {
+            window.clearTimeout(timeoutId)
+            resolve()
+          },
+          { once: true },
+        )
+      })
+    }),
+  )
+
+  // iOS Safari에서 Canvas의 최신 픽셀이 캡처 DOM에 반영될 시간을 확보함
   await new Promise<void>((resolve) =>
     requestAnimationFrame(() =>
-      requestAnimationFrame(() => resolve()),
+      requestAnimationFrame(() =>
+        window.setTimeout(resolve, 80),
+      ),
     ),
   )
 }
@@ -241,6 +348,28 @@ function moveDate(amount: number) {
       const result = await db.settings.get(PROFILE_IMAGE_KEY)
       return result?.value ?? ''
     }, []) ?? ''
+
+  const foldedCategoryIds =
+    useLiveQuery(async () => {
+      const result = await db.settings.get(TODO_FOLDED_CATEGORY_IDS_KEY)
+      return parseStoredNumberArray(result?.value)
+    }, []) ?? []
+
+  const captureSettings =
+    useLiveQuery(async () => {
+      const [timeLabelsSetting, hiddenCategorySetting] = await Promise.all([
+        db.settings.get(CAPTURE_TIME_LABELS_KEY),
+        db.settings.get(CAPTURE_HIDDEN_CATEGORY_IDS_KEY),
+      ])
+
+      return {
+        showTimeLabels: timeLabelsSetting?.value !== 'false',
+        hiddenCategoryIds: parseStoredNumberArray(hiddenCategorySetting?.value),
+      }
+    }, []) ?? {
+      showTimeLabels: true,
+      hiddenCategoryIds: [],
+    }
 
   const records: RecordSet =
     useLiveQuery(async () => {
@@ -493,6 +622,35 @@ function moveDate(amount: number) {
     await db.settings.put({
       key: CATEGORY_ORDER_KEY,
       value: JSON.stringify(orderedIds),
+    })
+  }
+
+  async function toggleTodoCategoryFold(categoryId: number) {
+    const nextIds = foldedCategoryIds.includes(categoryId)
+      ? foldedCategoryIds.filter((id) => id !== categoryId)
+      : [...foldedCategoryIds, categoryId]
+
+    await db.settings.put({
+      key: TODO_FOLDED_CATEGORY_IDS_KEY,
+      value: JSON.stringify(nextIds),
+    })
+  }
+
+  async function updateCaptureTimeLabels(show: boolean) {
+    await db.settings.put({
+      key: CAPTURE_TIME_LABELS_KEY,
+      value: String(show),
+    })
+  }
+
+  async function toggleCaptureCategoryVisibility(categoryId: number) {
+    const nextIds = captureSettings.hiddenCategoryIds.includes(categoryId)
+      ? captureSettings.hiddenCategoryIds.filter((id) => id !== categoryId)
+      : [...captureSettings.hiddenCategoryIds, categoryId]
+
+    await db.settings.put({
+      key: CAPTURE_HIDDEN_CATEGORY_IDS_KEY,
+      value: JSON.stringify(nextIds),
     })
   }
 
@@ -891,6 +1049,8 @@ function moveDate(amount: number) {
                 tasks={tasks}
                 dayStart={dayStart}
                 theme={theme}
+                foldedCategoryIds={foldedCategoryIds}
+                onToggleCategoryFold={toggleTodoCategoryFold}
                 onCreateTask={openNewTask}
                 onEditTask={openEditTask}
                 onCycleStatus={cycleTaskStatus}
@@ -963,6 +1123,10 @@ function moveDate(amount: number) {
           onApplyTemplate={applyDayTemplate}
           onDeleteTemplate={deleteDayTemplate}
           onReorderCategory={reorderCategory}
+          showCaptureTimeLabels={captureSettings.showTimeLabels}
+          hiddenCaptureCategoryIds={captureSettings.hiddenCategoryIds}
+          onChangeCaptureTimeLabels={updateCaptureTimeLabels}
+          onToggleCaptureCategory={toggleCaptureCategoryVisibility}
           onClose={() => setMenuOpen(false)}
         />
       )}
@@ -989,6 +1153,8 @@ function moveDate(amount: number) {
         theme={theme}
         profileImage={profileImage}
         completionRate={completionRate}
+        showTimeLabels={captureSettings.showTimeLabels}
+        hiddenCategoryIds={captureSettings.hiddenCategoryIds}
       />  
     </main>
   )
@@ -1005,6 +1171,8 @@ type CaptureViewProps = {
   theme: ThemeColors
   profileImage: string
   completionRate: number
+  showTimeLabels: boolean
+  hiddenCategoryIds: number[]
 }
 
 function CaptureView({
@@ -1018,6 +1186,8 @@ function CaptureView({
   theme,
   profileImage,
   completionRate,
+  showTimeLabels,
+  hiddenCategoryIds,
 }: CaptureViewProps) {
   const currentRecord = records.current
   const captureBodyHeight = 1166
@@ -1132,11 +1302,9 @@ function CaptureView({
                   <div className="shrink-0">
                     <div className="grid h-[128px] w-[128px] place-items-center overflow-hidden rounded-[22px] bg-neutral-50 text-neutral-400">
                       {profileImage ? (
-                        <img
+                        <CaptureProfileCanvas
                           src={profileImage}
-                          alt=""
-                          draggable={false}
-                          className="h-full w-full object-cover"
+                          size={128}
                         />
                       ) : (
                         <span className="text-base font-bold">No Image</span>
@@ -1204,6 +1372,8 @@ function CaptureView({
                   hourHeight={42}
                   extraLaneHeight={26}
                   captureTargetHeight={timePanelHeight}
+                  showTaskLabels={showTimeLabels}
+                  hiddenLabelCategoryIds={hiddenCategoryIds}
                 />
               </div>
             </div>
@@ -1216,6 +1386,7 @@ function CaptureView({
               onCreateTask={noopCreate}
               onEditTask={noopEdit}
               onCycleStatus={noopStatus}
+              hiddenCategoryIds={hiddenCategoryIds}
               captureMode
             />
           </div>
@@ -1235,6 +1406,8 @@ type TimePanelProps = {
   hourHeight?: number
   extraLaneHeight?: number
   captureTargetHeight?: number
+  showTaskLabels?: boolean
+  hiddenLabelCategoryIds?: number[]
 }
 
 function TimePanel({
@@ -1247,7 +1420,14 @@ function TimePanel({
   hourHeight = HOUR_HEIGHT,
   extraLaneHeight = EXTRA_LANE_HEIGHT,
   captureTargetHeight,
+  showTaskLabels = true,
+  hiddenLabelCategoryIds = [],
 }: TimePanelProps) {
+  const hiddenLabelCategoryIdSet = useMemo(
+    () => new Set(hiddenLabelCategoryIds),
+    [hiddenLabelCategoryIds],
+  )
+
   const categoryMap = useMemo(() => {
       return new Map(categories.map((category) => [category.id, category]))
     }, [categories])
@@ -1911,7 +2091,9 @@ function TimePanel({
                     }}
                   >
                     {/* 제목은 투두가 처음 나타나는 블록에서만 표시 */}
-                    {showTitle && (
+                    {showTitle &&
+                      showTaskLabels &&
+                      !hiddenLabelCategoryIdSet.has(task.categoryId) && (
                       <div
                         className={clsx(
                           'block min-w-0 w-full overflow-hidden text-ellipsis whitespace-nowrap font-bold',
@@ -1946,6 +2128,9 @@ type TodoPanelProps = {
   onCreateTask: (category: Category) => void
   onEditTask: (task: PlannerTask) => void
   onCycleStatus: (task: PlannerTask) => void
+  foldedCategoryIds?: number[]
+  onToggleCategoryFold?: (categoryId: number) => void | Promise<void>
+  hiddenCategoryIds?: number[]
   captureMode?: boolean
 }
 
@@ -1957,10 +2142,20 @@ function TodoPanel({
   onCreateTask,
   onEditTask,
   onCycleStatus,
+  foldedCategoryIds = [],
+  onToggleCategoryFold,
+  hiddenCategoryIds = [],
   captureMode = false,
 }: TodoPanelProps) {
-  // 일반 화면에서는 모든 카테고리를 보여주고,
-  // 캡처 화면에서는 투두가 있는 카테고리만 보여줌.
+  const foldedCategoryIdSet = useMemo(
+    () => new Set(foldedCategoryIds),
+    [foldedCategoryIds],
+  )
+  const hiddenCategoryIdSet = useMemo(
+    () => new Set(hiddenCategoryIds),
+    [hiddenCategoryIds],
+  )
+
   function compareTasksByStartTime(a: PlannerTask, b: PlannerTask) {
     const aHasTime = Boolean(a.startTime && a.endTime)
     const bHasTime = Boolean(b.startTime && b.endTime)
@@ -1989,9 +2184,14 @@ function TodoPanel({
         .filter((task) => task.categoryId === category.id)
         .sort(compareTasksByStartTime),
     }))
-    .filter(({ tasks: categoryTasks }) =>
-      captureMode ? categoryTasks.length > 0 : true,
-    )
+    .filter(({ category, tasks: categoryTasks }) => {
+      if (!captureMode) return true
+
+      return (
+        categoryTasks.length > 0 &&
+        !hiddenCategoryIdSet.has(category.id ?? -1)
+      )
+    })
 
   const uncategorized = tasks
     .filter(
@@ -2006,7 +2206,6 @@ function TodoPanel({
         captureMode ? 'h-full rounded-[30px]' : 'rounded-2xl',
       )}
     >
-      {/* 투두리스트 탭 제목 제거 */}
       <div
         className={clsx(
           captureMode
@@ -2020,63 +2219,99 @@ function TodoPanel({
           </div>
         )}
 
-        {grouped.map(({ category, tasks }) => (
-          <div
-            key={category.id}
-            className={captureMode ? 'mb-4.5' : 'mb-3'}
-          >
-            {/* 카테고리 이름을 누르면 해당 카테고리로 새 투두 생성 */}
-            <button
-              type="button"
-              onClick={() => onCreateTask(category)}
-              className={clsx(
-                'flex w-full items-center rounded-xl text-left hover:bg-neutral-100',
-                captureMode
-                  ? 'mb-2 gap-2 px-2 py-1.5'
-                  : 'mb-1 gap-2 px-2 py-2',
-              )}
-            >
-              <span
-                className={clsx(
-                  'rounded-full',
-                  captureMode ? 'h-[13px] w-[13px]' : 'h-3 w-3',
-                )}
-                style={{ backgroundColor: category.color }}
-              />
+        {grouped.map(({ category, tasks: categoryTasks }) => {
+          const categoryId = category.id
+          const isFolded =
+            !captureMode &&
+            categoryId !== undefined &&
+            foldedCategoryIdSet.has(categoryId)
 
-              <span
+          return (
+            <div
+              key={category.id}
+              className={captureMode ? 'mb-4.5' : 'mb-3'}
+            >
+              <div
                 className={clsx(
-                  'force-bold-text font-black',
-                  captureMode ? 'text-[25px]' : 'text-base',
+                  'flex items-center',
+                  captureMode ? 'mb-2' : 'mb-1',
                 )}
               >
-                {category.name}
-              </span>
-
-            </button>
-
-            {tasks.length === 0 ? (
-              !captureMode && (
-                <div className="rounded-xl border border-dashed border-neutral-200 p-4 text-sm text-neutral-400">
-                  empty
-                </div>
-              )
-            ) : (
-              <div className="divide-y divide-neutral-200">
-                {tasks.map((task) => (
-                  <TodoItem
-                    key={task.id}
-                    task={task}
-                    theme={theme}
-                    onCycleStatus={onCycleStatus}
-                    onEditTask={onEditTask}
-                    captureMode={captureMode}
+                <button
+                  type="button"
+                  onClick={() => onCreateTask(category)}
+                  className={clsx(
+                    'flex min-w-0 flex-1 items-center rounded-xl text-left hover:bg-neutral-100',
+                    captureMode
+                      ? 'gap-2 px-2 py-1.5'
+                      : 'gap-2 px-2 py-2',
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      'shrink-0 rounded-full',
+                      captureMode ? 'h-[13px] w-[13px]' : 'h-3 w-3',
+                    )}
+                    style={{ backgroundColor: category.color }}
                   />
-                ))}
+
+                  <span
+                    className={clsx(
+                      'force-bold-text truncate font-black',
+                      captureMode ? 'text-[25px]' : 'text-base',
+                    )}
+                  >
+                    {category.name}
+                  </span>
+                </button>
+
+                {!captureMode && categoryId !== undefined && (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      void onToggleCategoryFold?.(categoryId)
+                    }}
+                    className="ml-1 grid h-9 w-9 shrink-0 place-items-center rounded-xl text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700"
+                    aria-label={`${isFolded ? 'Unfold' : 'Fold'} ${category.name}`}
+                  >
+                    <ChevronDown
+                      size={19}
+                      strokeWidth={2.6}
+                      className={clsx(
+                        'transition-transform',
+                        isFolded && '-rotate-90',
+                      )}
+                    />
+                  </button>
+                )}
               </div>
-            )}
-          </div>
-        ))}
+
+              {!isFolded && (
+                categoryTasks.length === 0 ? (
+                  !captureMode && (
+                    <div className="rounded-xl border border-dashed border-neutral-200 p-4 text-sm text-neutral-400">
+                      empty
+                    </div>
+                  )
+                ) : (
+                  <div className="divide-y divide-neutral-200">
+                    {categoryTasks.map((task) => (
+                      <TodoItem
+                        key={task.id}
+                        task={task}
+                        theme={theme}
+                        onCycleStatus={onCycleStatus}
+                        onEditTask={onEditTask}
+                        captureMode={captureMode}
+                      />
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
+          )
+        })}
 
         {uncategorized.length > 0 && (
           <div className="mb-5">
@@ -2358,6 +2593,10 @@ type MenuDrawerProps = {
   onApplyTemplate: (template: DayTemplate) => Promise<void>
   onDeleteTemplate: (templateId?: number) => Promise<void>
   onReorderCategory: (sourceId: number, targetId: number) => Promise<void>
+  showCaptureTimeLabels: boolean
+  hiddenCaptureCategoryIds: number[]
+  onChangeCaptureTimeLabels: (show: boolean) => Promise<void>
+  onToggleCaptureCategory: (categoryId: number) => Promise<void>
   onClose: () => void
 }
 
@@ -2370,6 +2609,10 @@ function MenuDrawer({
     onApplyTemplate,
     onDeleteTemplate,
     onReorderCategory,
+    showCaptureTimeLabels,
+    hiddenCaptureCategoryIds,
+    onChangeCaptureTimeLabels,
+    onToggleCaptureCategory,
     onClose,
   }: MenuDrawerProps) {
   const [newCategoryName, setNewCategoryName] = useState('')
@@ -2516,6 +2759,88 @@ function MenuDrawer({
                 updateThemeColor(THEME_SETTING_KEYS.statusPartial, value)
               }
             />
+          </div>
+        </CollapsibleSection>
+
+        <CollapsibleSection title="Capture Settings">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 px-3 py-2.5">
+              <div>
+                <div className="text-sm font-black">Time Labels</div>
+                <div className="mt-0.5 text-xs font-bold text-neutral-400">
+                  Show task names in the captured time tab
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  void onChangeCaptureTimeLabels(!showCaptureTimeLabels)
+                }
+                className={clsx(
+                  'min-w-[72px] rounded-xl border px-3 py-2 text-xs font-black',
+                  !showCaptureTimeLabels &&
+                    'border-neutral-200 bg-white text-neutral-500',
+                )}
+                style={
+                  showCaptureTimeLabels
+                    ? {
+                        borderColor: theme.primaryBg,
+                        backgroundColor: theme.primaryBg,
+                        color: theme.primaryText,
+                      }
+                    : undefined
+                }
+              >
+                {showCaptureTimeLabels ? 'SHOW' : 'HIDE'}
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {categories.map((category) => {
+                if (category.id === undefined) return null
+
+                const hidden = hiddenCaptureCategoryIds.includes(category.id)
+
+                return (
+                  <div
+                    key={category.id}
+                    className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 px-3 py-2.5"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="h-3 w-3 shrink-0 rounded-full"
+                        style={{ backgroundColor: category.color }}
+                      />
+                      <span className="truncate text-sm font-black">
+                        {category.name}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => void onToggleCaptureCategory(category.id!)}
+                      className={clsx(
+                        'min-w-[72px] rounded-xl border px-3 py-2 text-xs font-black',
+                        hidden &&
+                          'border-neutral-200 bg-white text-neutral-500',
+                      )}
+                      style={
+                        hidden
+                          ? undefined
+                          : {
+                              borderColor: theme.primaryBg,
+                              backgroundColor: theme.primaryBg,
+                              color: theme.primaryText,
+                            }
+                      }
+                    >
+                      {hidden ? 'HIDE' : 'SHOW'}
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
           </div>
         </CollapsibleSection>
 
