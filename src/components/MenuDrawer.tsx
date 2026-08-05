@@ -2,7 +2,7 @@ import { useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { GripVertical, X } from 'lucide-react'
 import clsx from 'clsx'
 import { db } from '../db'
-import type { Category, DayTemplate } from '../types'
+import type { Category, DayTemplate, HabitDefinition } from '../types'
 import type { ThemeColors } from '../plannerTypes'
 import { THEME_SETTING_KEYS } from '../plannerTypes'
 import TimeSelect from './TimeSelect'
@@ -11,15 +11,21 @@ type MenuDrawerProps = {
   dayStart: string
   categories: Category[]
   theme: ThemeColors
-  dayTemplates: DayTemplate[]
-  onSaveTemplate: (name: string) => Promise<void>
-  onApplyTemplate: (template: DayTemplate) => Promise<void>
-  onDeleteTemplate: (templateId?: number) => Promise<void>
+  dayTemplates?: DayTemplate[]
+  onSaveTemplate?: (name: string) => Promise<void>
+  onApplyTemplate?: (template: DayTemplate) => Promise<void>
+  onDeleteTemplate?: (templateId?: number) => Promise<void>
   onReorderCategory: (sourceId: number, targetId: number) => Promise<void>
   showCaptureTimeLabels: boolean
   hiddenCaptureCategoryIds: number[]
   onChangeCaptureTimeLabels: (show: boolean) => Promise<void>
   onToggleCaptureCategory: (categoryId: number) => Promise<void>
+  moodLabels?: string[]
+  habits?: HabitDefinition[]
+  onChangeMoodLabel?: (index: number, value: string) => Promise<void>
+  onAddHabit?: (name: string) => Promise<void>
+  onRenameHabit?: (habitId: string, name: string) => Promise<void>
+  onDeleteHabit?: (habitId: string) => Promise<void>
   onClose: () => void
 }
 
@@ -36,11 +42,18 @@ function MenuDrawer({
     hiddenCaptureCategoryIds,
     onChangeCaptureTimeLabels,
     onToggleCaptureCategory,
+    moodLabels,
+    habits,
+    onChangeMoodLabel,
+    onAddHabit,
+    onRenameHabit,
+    onDeleteHabit,
     onClose,
   }: MenuDrawerProps) {
   const [newCategoryName, setNewCategoryName] = useState('')
   const [newCategoryColor, setNewCategoryColor] = useState('#9ec9ef')
   const [templateName, setTemplateName] = useState('')
+  const [newHabitName, setNewHabitName] = useState('')
   const [draggedCategoryId, setDraggedCategoryId] = useState<number | null>(null)
   const categoryPressTimerRef = useRef<number | null>(null)
 
@@ -115,6 +128,27 @@ function MenuDrawer({
     await db.categories.delete(categoryId)
   }
 
+  async function addWeeklyHabit() {
+    const name = newHabitName.trim()
+    if (!name || !onAddHabit) return
+
+    await onAddHabit(name)
+    setNewHabitName('')
+  }
+
+  const showWeeklyTrackerSettings = Boolean(
+    moodLabels &&
+      habits &&
+      onChangeMoodLabel &&
+      onAddHabit &&
+      onRenameHabit &&
+      onDeleteHabit,
+  )
+
+  const showDayTemplateSettings = Boolean(
+    dayTemplates && onSaveTemplate && onApplyTemplate && onDeleteTemplate,
+  )
+
   return (
     <div className="fixed inset-0 z-30 bg-black/30">
       <aside className="ml-auto h-full w-[88vw] max-w-md overflow-auto bg-white p-4 shadow-xl [&_button]:font-black">
@@ -184,6 +218,98 @@ function MenuDrawer({
             />
           </div>
         </CollapsibleSection>
+
+        {showWeeklyTrackerSettings && (
+          <CollapsibleSection title="Weekly Tracker Settings">
+            <div className="space-y-5">
+              <div>
+                <div className="mb-2 text-sm font-black">Mood Labels</div>
+
+                <div className="space-y-2">
+                  {moodLabels!.map((label, index) => (
+                    <label
+                      key={index}
+                      className="grid grid-cols-[68px_1fr] items-center gap-2 text-xs font-black text-neutral-500"
+                    >
+                      <span>LEVEL {index + 1}</span>
+                      <input
+                        defaultValue={label}
+                        maxLength={20}
+                        onBlur={(event) =>
+                          void onChangeMoodLabel!(index, event.target.value)
+                        }
+                        className="force-bold-text rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-800"
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-sm font-black">Habit Categories</span>
+                  <span className="text-xs font-bold text-neutral-400">
+                    {habits!.length}/4
+                  </span>
+                </div>
+
+                <div className="mb-3 flex gap-2">
+                  <input
+                    value={newHabitName}
+                    maxLength={30}
+                    disabled={habits!.length >= 4}
+                    onChange={(event) => setNewHabitName(event.target.value)}
+                    placeholder="New Habit"
+                    className="min-w-0 flex-1 rounded-xl border border-neutral-200 px-3 py-2 font-bold disabled:bg-neutral-100"
+                  />
+
+                  <button
+                    type="button"
+                    disabled={habits!.length >= 4 || !newHabitName.trim()}
+                    onClick={() => void addWeeklyHabit()}
+                    className="rounded-xl px-4 py-2 text-sm font-black disabled:opacity-40"
+                    style={{
+                      backgroundColor: theme.primaryBg,
+                      color: theme.primaryText,
+                    }}
+                  >
+                    ADD
+                  </button>
+                </div>
+
+                {habits!.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-neutral-200 p-4 text-center text-sm font-bold text-neutral-400">
+                    No Habit
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {habits!.map((habit) => (
+                      <div key={habit.id} className="flex gap-2">
+                        <input
+                          defaultValue={habit.name}
+                          maxLength={30}
+                          onBlur={(event) =>
+                            void onRenameHabit!(habit.id, event.target.value)
+                          }
+                          className="force-bold-text min-w-0 flex-1 rounded-xl border border-neutral-200 px-3 py-2 font-black"
+                        />
+
+                        <button
+                          type="button"
+                          onClick={() => void onDeleteHabit!(habit.id)}
+                          className="rounded-xl border border-red-200 px-3 py-2 text-xs font-black text-red-500"
+                        >
+                          DELETE
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </CollapsibleSection>
+        )}
+
 
         <CollapsibleSection title="Capture Settings">
           <div className="space-y-3">
@@ -267,7 +393,8 @@ function MenuDrawer({
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Day Template">
+        {showDayTemplateSettings && (
+          <CollapsibleSection title="Day Template">
           <div className="space-y-3">
             <input
               value={templateName}
@@ -282,7 +409,7 @@ function MenuDrawer({
             <button
               type="button"
               onClick={async () => {
-                await onSaveTemplate(templateName)
+                await onSaveTemplate!(templateName)
                 setTemplateName('')
               }}
               className="w-full rounded-xl px-4 py-3 font-black"
@@ -294,13 +421,13 @@ function MenuDrawer({
               SAVE CURRENT DAY
             </button>
 
-            {dayTemplates.length === 0 ? (
+            {dayTemplates!.length === 0 ? (
               <div className="rounded-xl border border-dashed border-neutral-200 p-4 text-center text-sm text-neutral-400">
                 No Template
               </div>
             ) : (
               <div className="space-y-2">
-                {dayTemplates.map((template) => (
+                {dayTemplates!.map((template) => (
                   <div
                     key={template.id}
                     className="rounded-2xl border border-neutral-200 p-3"
@@ -319,7 +446,7 @@ function MenuDrawer({
                       <button
                         type="button"
                         onClick={async () => {
-                          await onApplyTemplate(template)
+                          await onApplyTemplate!(template)
                           onClose()
                         }}
                         className="rounded-xl px-3 py-2 text-sm font-black"
@@ -334,7 +461,7 @@ function MenuDrawer({
                       <button
                         type="button"
                         onClick={() =>
-                          void onDeleteTemplate(template.id)
+                          void onDeleteTemplate!(template.id)
                         }
                         className="rounded-xl border border-red-200 px-3 py-2 text-sm font-black text-red-500"
                       >
@@ -346,7 +473,8 @@ function MenuDrawer({
               </div>
             )}
           </div>
-        </CollapsibleSection> 
+          </CollapsibleSection>
+        )}
 
         <CollapsibleSection title="Setting Category">
           <div className="mb-3 grid grid-cols-[1fr_52px] gap-2">

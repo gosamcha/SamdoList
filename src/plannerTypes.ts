@@ -35,3 +35,16 @@ export const CATEGORY_ORDER_KEY = 'category.order'
 export const TODO_FOLDED_CATEGORY_IDS_KEY = 'todo.foldedCategoryIds'
 export const CAPTURE_TIME_LABELS_KEY = 'capture.showTimeLabels'
 export const CAPTURE_HIDDEN_CATEGORY_IDS_KEY = 'capture.hiddenCategoryIds'
+
+export const WEEKLY_MOOD_LABELS_KEY = 'weekly.moodLabels'
+export const WEEKLY_HABITS_KEY = 'weekly.habits'
+
+export const DEFAULT_WEEKLY_MOOD_LABELS = [
+  'Good',
+  'Calm',
+  'Tired',
+  'Sad',
+] as const
+
+export const DEFAULT_WEEKLY_MOOD_LEVEL = 1
+export const MAX_WEEKLY_HABITS = 4

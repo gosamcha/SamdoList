@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ChevronLeft, ChevronRight, ImageDown, Menu } from 'lucide-react'
+import { CalendarRange, ChevronLeft, ChevronRight, ImageDown, Menu } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import clsx from 'clsx'
 import { db, seedInitialData } from '../db'
@@ -12,7 +12,6 @@ import type {
 } from '../types'
 import {
   addDays,
-  formatDateLocal,
   minutesToTimeLabel,
   timeToMinutes,
 } from '../utils/time'
@@ -67,8 +66,17 @@ const nextStatus: Record<TaskStatus, TaskStatus> = {
   partial: 'todo',
 }
 
-function DailyPlannerPage() {
-  const [selectedDate, setSelectedDate] = useState(formatDateLocal())
+type DailyPlannerPageProps = {
+  selectedDate: string
+  onSelectedDateChange: (date: string) => void
+  onOpenWeekly: () => void
+}
+
+function DailyPlannerPage({
+  selectedDate,
+  onSelectedDateChange,
+  onOpenWeekly,
+}: DailyPlannerPageProps) {
   const [showTimeTab, setShowTimeTab] = useState(true)
   const [showTodoTab, setShowTodoTab] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -92,7 +100,7 @@ const dayTemplates =
   ) ?? []
 
 function moveDate(amount: number) {
-  setSelectedDate((prevDate) => addDays(prevDate, amount))
+  onSelectedDateChange(addDays(selectedDate, amount))
 }
 
   useEffect(() => {
@@ -683,7 +691,7 @@ function moveDate(amount: number) {
                 ref={dateInputRef}
                 type="date"
                 value={selectedDate}
-                onChange={(event) => setSelectedDate(event.target.value)}
+                onChange={(event) => onSelectedDateChange(event.target.value)}
                 className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
                 aria-label="Select date"
               />
@@ -699,6 +707,15 @@ function moveDate(amount: number) {
               <ChevronRight size={24} strokeWidth={3} />
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={onOpenWeekly}
+            className="rounded-xl border border-neutral-200 p-2"
+            aria-label="Open weekly summary"
+          >
+            <CalendarRange size={22} />
+          </button>
 
           <button
             type="button"
