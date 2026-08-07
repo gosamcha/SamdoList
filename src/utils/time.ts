@@ -19,6 +19,32 @@ export function addDays(dateString: string, amount: number) {
   return formatDateLocal(date)
 }
 
+export function startOfWeekMonday(dateString: string) {
+  const date = new Date(`${dateString}T00:00:00`)
+  const day = date.getDay()
+  const offset = day === 0 ? -6 : 1 - day
+
+  date.setDate(date.getDate() + offset)
+  return formatDateLocal(date)
+}
+
+export function getWeekDates(dateString: string) {
+  const weekStart = startOfWeekMonday(dateString)
+
+  return Array.from({ length: 7 }, (_, index) => addDays(weekStart, index))
+}
+
+export function formatMonthDay(dateString: string) {
+  return dateString.slice(5).replace('-', '/')
+}
+
+export function formatWeekRange(dateString: string) {
+  const weekStart = startOfWeekMonday(dateString)
+  const weekEnd = addDays(weekStart, 6)
+
+  return `${formatMonthDay(weekStart)} ~ ${formatMonthDay(weekEnd)}`
+}
+
 export function timeToMinutes(time: string) {
   const [hour, minute] = time.split(':').map(Number)
   return hour * 60 + minute
@@ -55,7 +81,11 @@ export function localDateAt(dateString: string, time: string) {
   return new Date(year, month - 1, day, hour, minute, 0, 0)
 }
 
-export function sleepStartDateTime(dateString: string, sleepTime: string, dayStart: string) {
+export function sleepStartDateTime(
+  dateString: string,
+  sleepTime: string,
+  dayStart: string,
+) {
   const date = localDateAt(dateString, sleepTime)
 
   if (timeToMinutes(sleepTime) < timeToMinutes(dayStart)) {

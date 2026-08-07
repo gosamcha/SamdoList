@@ -1,4 +1,6 @@
 export type TaskStatus = 'todo' | 'done' | 'partial'
+export type HabitStatus = TaskStatus
+export type MoodLevel = 0 | 1 | 2 | 3
 
 export interface Category {
   id?: number
@@ -13,7 +15,7 @@ export interface PlannerTask {
   title: string
   startTime?: string
   endTime?: string
-  memo?: string // 간단 메모
+  memo?: string
   status: TaskStatus
   createdAt: number
 }
@@ -22,7 +24,6 @@ export interface DailyRecord {
   date: string
   wakeTime?: string
   sleepTime?: string
-
   memo?: string
 }
 
@@ -43,15 +44,22 @@ export type DayTemplateTask = {
 export type DayTemplate = {
   id?: number
   name: string
-
   wakeTime?: string
   sleepTime?: string
-
-  // DailyRecord에 memo가 실제로 존재할 때 사용
   memo?: string
-
   tasks: DayTemplateTask[]
-
   createdAt: number
   updatedAt: number
+}
+
+export type HabitDefinition = {
+  id: string
+  name: string
+}
+
+export interface WeeklyRecord {
+  weekStart: string
+  memo?: string
+  moods?: MoodLevel[]
+  habitStatuses?: Record<string, HabitStatus[]>
 }
