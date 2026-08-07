@@ -13,6 +13,10 @@ import {
   type WeeklySleepRow,
 } from './WeeklySummarySections'
 
+const CAPTURE_HABIT_HEIGHT = 300
+const CAPTURE_MOOD_HEIGHT = 310
+const CAPTURE_SLEEP_HEIGHT = 516
+
 type WeeklyCaptureViewProps = {
   captureRef: RefObject<HTMLDivElement | null>
   weekLabel: string
@@ -92,15 +96,16 @@ function WeeklyCaptureView({
             />
 
             <div className="flex min-h-0 flex-col gap-5">
-              <div className="shrink-0" style={{ height: 360 }}>
-                <SleepTracker
-                  rows={sleepRows}
+              <div className="shrink-0" style={{ height: CAPTURE_HABIT_HEIGHT }}>
+                <HabitTracker
+                  habits={habits}
+                  habitStatuses={habitStatuses}
                   theme={theme}
                   captureMode
                 />
               </div>
 
-              <div className="shrink-0" style={{ height: 350 }}>
+              <div className="shrink-0" style={{ height: CAPTURE_MOOD_HEIGHT }}>
                 <MoodTracker
                   moodLabels={moodLabels}
                   moods={moods}
@@ -109,10 +114,9 @@ function WeeklyCaptureView({
                 />
               </div>
 
-              <div className="min-h-0 flex-1">
-                <HabitTracker
-                  habits={habits}
-                  habitStatuses={habitStatuses}
+              <div className="shrink-0" style={{ height: CAPTURE_SLEEP_HEIGHT }}>
+                <SleepTracker
+                  rows={sleepRows}
                   theme={theme}
                   captureMode
                 />

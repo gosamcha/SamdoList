@@ -621,7 +621,12 @@ function WeeklySummaryPage({
           <ProgressCycleList progressRates={progressRates} theme={theme} />
 
           <div className="min-w-0 space-y-3">
-            <SleepTracker rows={sleepRows} theme={theme} />
+            <HabitTracker
+              habits={habits}
+              habitStatuses={habitStatuses}
+              theme={theme}
+              onCycleStatus={cycleHabitStatus}
+            />
 
             <MoodTracker
               moodLabels={moodLabels}
@@ -630,12 +635,7 @@ function WeeklySummaryPage({
               onChangeMood={changeMood}
             />
 
-            <HabitTracker
-              habits={habits}
-              habitStatuses={habitStatuses}
-              theme={theme}
-              onCycleStatus={cycleHabitStatus}
-            />
+            <SleepTracker rows={sleepRows} theme={theme} />
           </div>
         </div>
 

@@ -101,11 +101,13 @@ export function ProgressCycleList({
       </div>
 
       <div
-        className="grid grid-rows-7 gap-1"
         style={{
+          display: 'grid',
+          gridTemplateRows: 'repeat(7, minmax(0, 1fr))',
           height: captureMode
             ? 'calc(100% - 54px)'
             : 'calc(100% - 32px)',
+          rowGap: captureMode ? 4 : 2,
         }}
       >
         {WEEKDAY_LABELS.map((label, index) => (
@@ -137,12 +139,30 @@ export function SleepTracker({
 }: SleepTrackerProps) {
   const titleSize = captureMode ? 28 : 17
   const labelSize = captureMode ? 15 : 10
-  const rowHeight = captureMode ? 27 : 25
+  const gridColumns = captureMode
+    ? '38px minmax(0, 1fr) 122px'
+    : '24px minmax(0, 1fr) 76px'
+  const sleepColumnGap = captureMode ? 20 : 12
+  const timelineWidth = captureMode ? '92%' : '100%'
+  const resolvedRows = Array.from({ length: 7 }, (_, index) =>
+    rows[index] ?? {
+      dayLabel: WEEKDAY_LABELS[index],
+      durationText: 'XXh XXm',
+    },
+  )
 
   return (
     <section
-      className={`${captureMode ? 'h-full' : ''} overflow-hidden rounded-3xl border border-neutral-200 bg-white`}
-      style={{ padding: captureMode ? 20 : 14 }}
+      className="overflow-hidden rounded-3xl border border-neutral-200 bg-white"
+      style={{
+        height: captureMode ? '100%' : undefined,
+        padding: captureMode ? 20 : 14,
+        display: 'grid',
+        gridTemplateRows: captureMode
+          ? '34px 22px minmax(0, 1fr)'
+          : '24px 18px auto',
+        rowGap: captureMode ? 12 : 10,
+      }}
     >
       <div
         className="font-black leading-none"
@@ -152,15 +172,18 @@ export function SleepTracker({
       </div>
 
       <div
-        className="mt-3 grid items-end gap-2"
         style={{
-          gridTemplateColumns: captureMode
-            ? '34px minmax(0, 1fr) 94px'
-            : '20px minmax(0, 1fr) 55px',
+          display: 'grid',
+          gridTemplateColumns: gridColumns,
+          columnGap: sleepColumnGap,
+          alignItems: 'center',
         }}
       >
         <div />
-        <div className="flex justify-between text-neutral-400">
+        <div
+          className="mx-auto flex justify-between text-neutral-400"
+          style={{ width: timelineWidth }}
+        >
           {SLEEP_TIME_LABELS.map((label) => (
             <span
               key={label}
@@ -171,16 +194,25 @@ export function SleepTracker({
             </span>
           ))}
         </div>
-        <div
-          className="text-right font-bold leading-none text-neutral-400"
-          style={{ fontSize: labelSize }}
-        >
-          Duration
-        </div>
       </div>
 
-      <div className={captureMode ? 'mt-2 space-y-1' : 'mt-2 space-y-1.5'}>
-        {rows.map((row, index) => {
+      <div
+        style={
+          captureMode
+            ? {
+                display: 'grid',
+                gridTemplateRows: 'repeat(7, minmax(0, 1fr))',
+                minHeight: 0,
+                height: '100%',
+              }
+            : {
+                display: 'grid',
+                gridTemplateRows: 'repeat(7, 34px)',
+                rowGap: 5,
+              }
+        }
+      >
+        {resolvedRows.map((row, index) => {
           const hasRange =
             row.startPercent !== undefined &&
             row.endPercent !== undefined &&
@@ -189,12 +221,12 @@ export function SleepTracker({
           return (
             <div
               key={`${row.dayLabel}-${index}`}
-              className="grid items-center gap-2"
               style={{
-                minHeight: rowHeight,
-                gridTemplateColumns: captureMode
-                  ? '34px minmax(0, 1fr) 94px'
-                  : '20px minmax(0, 1fr) 55px',
+                display: 'grid',
+                gridTemplateColumns: gridColumns,
+                columnGap: sleepColumnGap,
+                alignItems: 'center',
+                minHeight: 0,
               }}
             >
               <div
@@ -205,8 +237,11 @@ export function SleepTracker({
               </div>
 
               <div
-                className="relative overflow-hidden rounded-full bg-neutral-100"
-                style={{ height: captureMode ? 15 : 9 }}
+                className="relative mx-auto overflow-hidden rounded-full bg-neutral-100"
+                style={{
+                  width: timelineWidth,
+                  height: captureMode ? 15 : 9,
+                }}
               >
                 {hasRange ? (
                   <div
@@ -221,7 +256,7 @@ export function SleepTracker({
               </div>
 
               <div
-                className="text-right font-black leading-none text-neutral-500"
+                className="text-center font-black leading-none text-neutral-500"
                 style={{ fontSize: captureMode ? 20 : 10 }}
               >
                 {row.durationText}
@@ -242,6 +277,9 @@ type MoodTrackerProps = {
   captureMode?: boolean
 }
 
+const TRACKER_LABEL_WIDTH_CAPTURE = 112
+const TRACKER_LABEL_WIDTH_SCREEN = 86
+
 export function MoodTracker({
   moodLabels,
   moods,
@@ -252,8 +290,12 @@ export function MoodTracker({
   const resolvedLabels = Array.from({ length: 4 }, (_, index) =>
     moodLabels[index]?.trim() || `Mood ${index + 1}`,
   )
+  const resolvedMoods = Array.from(
+    { length: 7 },
+    (_, index) => moods[index] ?? 1,
+  ) as MoodLevel[]
 
-  const points = moods
+  const points = resolvedMoods
     .map((mood, index) => {
       const x = ((index + 0.5) / 7) * 100
       const y = ((mood + 0.5) / 4) * 100
@@ -261,34 +303,56 @@ export function MoodTracker({
     })
     .join(' ')
 
-  const chartHeight = captureMode ? 200 : 165
+  const labelColumnWidth = captureMode
+    ? TRACKER_LABEL_WIDTH_CAPTURE
+    : TRACKER_LABEL_WIDTH_SCREEN
+  const columnGap = captureMode ? 14 : 10
+  const axisHeight = captureMode ? 30 : 22
+  const lineWidth = captureMode ? 3 : 2
+  const dotSize = captureMode ? 12 : 8
 
   return (
     <section
-      className={`${captureMode ? 'h-full' : ''} rounded-3xl border border-neutral-200 bg-white`}
-      style={{ padding: captureMode ? 20 : 14 }}
+      className="overflow-hidden rounded-3xl border border-neutral-200 bg-white"
+      style={{
+        height: captureMode ? '100%' : undefined,
+        padding: captureMode ? 20 : 14,
+        display: 'grid',
+        gridTemplateRows: captureMode
+          ? '34px minmax(0, 1fr)'
+          : '24px 190px',
+        rowGap: captureMode ? 12 : 8,
+      }}
     >
       <div
-        className="font-black"
+        className="font-black leading-none"
         style={{ fontSize: captureMode ? 28 : 17 }}
       >
         Mood Tracker
       </div>
 
       <div
-        className="mt-3 grid gap-3"
         style={{
-          gridTemplateColumns: captureMode ? '104px minmax(0, 1fr)' : '58px minmax(0, 1fr)',
+          display: 'grid',
+          gridTemplateColumns: `${labelColumnWidth}px minmax(0, 1fr)`,
+          columnGap,
+          minHeight: 0,
+          width: captureMode ? 'calc(100% - 20px)' : '100%',
+          marginLeft: captureMode ? 'auto' : undefined,
         }}
       >
         <div
-          className="grid grid-rows-4"
-          style={{ height: chartHeight }}
+          style={{
+            display: 'grid',
+            gridTemplateRows: 'repeat(4, minmax(0, 1fr))',
+            minHeight: 0,
+            paddingBottom: axisHeight,
+          }}
         >
           {resolvedLabels.map((label) => (
             <div
               key={label}
-              className="flex items-center font-black text-neutral-500"
+              className="flex min-w-0 items-center justify-end pr-4 font-black text-neutral-500"
               style={{ fontSize: captureMode ? 21 : 10 }}
             >
               <span className="truncate">{label}</span>
@@ -296,8 +360,14 @@ export function MoodTracker({
           ))}
         </div>
 
-        <div>
-          <div className="relative" style={{ height: chartHeight }}>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateRows: `minmax(0, 1fr) ${axisHeight}px`,
+            minHeight: 0,
+          }}
+        >
+          <div className="relative min-h-0">
             <svg
               viewBox="0 0 100 100"
               preserveAspectRatio="none"
@@ -307,39 +377,55 @@ export function MoodTracker({
                 points={points}
                 fill="none"
                 stroke={theme.primaryBg}
-                strokeWidth={captureMode ? 3.6 : 3}
+                strokeWidth={lineWidth}
                 vectorEffect="non-scaling-stroke"
                 strokeLinejoin="round"
                 strokeLinecap="round"
               />
             </svg>
 
-            {moods.map((mood, index) => {
+            {resolvedMoods.map((mood, index) => {
               const x = ((index + 0.5) / 7) * 100
               const y = ((mood + 0.5) / 4) * 100
-              const dotSize = captureMode ? 16 : 11
 
               return (
                 <span
                   key={`${index}-${mood}`}
-                  className="pointer-events-none absolute rounded-full"
+                  className="pointer-events-none absolute"
                   style={{
                     left: `${x}%`,
                     top: `${y}%`,
                     width: dotSize,
                     height: dotSize,
-                    backgroundColor: theme.primaryBg,
-                    border: '2px solid #ffffff',
-                    boxShadow: `0 0 0 1px ${theme.primaryBg}`,
+                    borderRadius: '9999px',
+                    boxSizing: 'border-box',
+                    backgroundColor: '#ffffff',
+                    borderStyle: 'solid',
+                    borderColor: theme.primaryBg,
+                    borderWidth: lineWidth,
+                    boxShadow: 'none',
+                    outline: 'none',
                     transform: 'translate(-50%, -50%)',
                   }}
                 />
               )
             })}
 
-            <div className="absolute inset-0 grid grid-cols-7">
+            <div
+              className="absolute inset-0"
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+              }}
+            >
               {WEEKDAY_LABELS.map((dayLabel, dayIndex) => (
-                <div key={`${dayLabel}-${dayIndex}`} className="grid grid-rows-4">
+                <div
+                  key={`${dayLabel}-${dayIndex}`}
+                  style={{
+                    display: 'grid',
+                    gridTemplateRows: 'repeat(4, minmax(0, 1fr))',
+                  }}
+                >
                   {resolvedLabels.map((label, moodIndex) => (
                     <button
                       key={`${label}-${moodIndex}`}
@@ -357,11 +443,17 @@ export function MoodTracker({
             </div>
           </div>
 
-          <div className="mt-2 grid grid-cols-7">
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+              alignItems: 'end',
+            }}
+          >
             {WEEKDAY_LABELS.map((label, index) => (
               <div
                 key={`${label}-${index}`}
-                className="text-center font-black"
+                className="text-center font-black leading-none"
                 style={{ fontSize: captureMode ? 22 : 11 }}
               >
                 {label}
@@ -402,13 +494,24 @@ export function HabitTracker({
   captureMode = false,
 }: HabitTrackerProps) {
   const rows = Array.from({ length: 4 }, (_, index) => habits[index])
-  const rowHeight = captureMode ? 58 : 38
-  const labelColumnWidth = captureMode ? 104 : 58
+  const labelColumnWidth = captureMode
+    ? TRACKER_LABEL_WIDTH_CAPTURE
+    : TRACKER_LABEL_WIDTH_SCREEN
+  const columnGap = captureMode ? 14 : 10
+  const headerHeight = captureMode ? 30 : 24
 
   return (
     <section
-      className={`${captureMode ? 'h-full' : ''} overflow-hidden rounded-3xl border border-neutral-200 bg-white`}
-      style={{ padding: captureMode ? 20 : 14 }}
+      className="overflow-hidden rounded-3xl border border-neutral-200 bg-white"
+      style={{
+        height: captureMode ? '100%' : undefined,
+        padding: captureMode ? 20 : 14,
+        display: 'grid',
+        gridTemplateRows: captureMode
+          ? '34px minmax(0, 1fr)'
+          : '24px 180px',
+        rowGap: captureMode ? 12 : 8,
+      }}
     >
       <div
         className="font-black leading-none"
@@ -418,23 +521,40 @@ export function HabitTracker({
       </div>
 
       <div
-        className="mt-3 grid gap-x-3"
         style={{
-          gridTemplateColumns: `${labelColumnWidth}px minmax(0, 1fr)`,
+          display: 'grid',
+          gridTemplateRows: `${headerHeight}px repeat(4, minmax(0, 1fr))`,
+          minHeight: 0,
+          height: '100%',
+          width: captureMode ? 'calc(100% - 20px)' : '100%',
+          marginLeft: captureMode ? 'auto' : undefined,
         }}
       >
-        <div />
-
-        <div className="grid grid-cols-7">
-          {WEEKDAY_LABELS.map((label, index) => (
-            <div
-              key={`${label}-${index}`}
-              className="text-center font-black leading-none"
-              style={{ fontSize: captureMode ? 22 : 11 }}
-            >
-              {label}
-            </div>
-          ))}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: `${labelColumnWidth}px minmax(0, 1fr)`,
+            columnGap,
+            alignItems: 'center',
+          }}
+        >
+          <div />
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+            }}
+          >
+            {WEEKDAY_LABELS.map((label, index) => (
+              <div
+                key={`${label}-${index}`}
+                className="text-center font-black leading-none"
+                style={{ fontSize: captureMode ? 22 : 11 }}
+              >
+                {label}
+              </div>
+            ))}
+          </div>
         </div>
 
         {rows.map((habit, rowIndex) => {
@@ -443,21 +563,32 @@ export function HabitTracker({
             : []
 
           return (
-            <div key={habit?.id ?? `empty-${rowIndex}`} className="contents">
+            <div
+              key={habit?.id ?? `empty-${rowIndex}`}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: `${labelColumnWidth}px minmax(0, 1fr)`,
+                columnGap,
+                alignItems: 'stretch',
+                minHeight: 0,
+              }}
+            >
               <div
-                className="min-w-0 truncate font-black text-neutral-600"
+                className="flex min-w-0 items-center font-black text-neutral-600"
                 style={{
-                  minHeight: rowHeight,
-                  lineHeight: `${rowHeight}px`,
+                  minHeight: 0,
                   fontSize: captureMode ? 21 : 11,
                 }}
               >
-                {habit?.name ?? ''}
+                <span className="truncate">{habit?.name ?? ''}</span>
               </div>
 
               <div
-                className="grid grid-cols-7"
-                style={{ minHeight: rowHeight }}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+                  minHeight: 0,
+                }}
               >
                 {WEEKDAY_LABELS.map((_, dayIndex) => {
                   if (!habit) {
@@ -472,9 +603,9 @@ export function HabitTracker({
                       type="button"
                       disabled={!onCycleStatus}
                       onClick={() => onCycleStatus?.(habit.id, dayIndex)}
-                      className="grid place-items-center leading-none disabled:cursor-default"
+                      className="grid h-full place-items-center leading-none disabled:cursor-default"
                       style={{
-                        minHeight: rowHeight,
+                        minHeight: 0,
                         color: getHabitStatusColor(status, theme),
                         fontSize: captureMode ? 27 : 15,
                         fontWeight: 900,
