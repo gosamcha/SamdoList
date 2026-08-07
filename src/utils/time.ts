@@ -50,6 +50,17 @@ export function timeToMinutes(time: string) {
   return hour * 60 + minute
 }
 
+export function getPlannerDate(date = new Date(), dayStart = '08:00') {
+  const plannerDate = new Date(date)
+  const currentMinutes = plannerDate.getHours() * 60 + plannerDate.getMinutes()
+
+  if (currentMinutes < timeToMinutes(dayStart)) {
+    plannerDate.setDate(plannerDate.getDate() - 1)
+  }
+
+  return formatDateLocal(plannerDate)
+}
+
 export function minutesToTimeLabel(totalMinutes: number) {
   const normalized = ((totalMinutes % DAY_MINUTES) + DAY_MINUTES) % DAY_MINUTES
   const hour = Math.floor(normalized / 60)

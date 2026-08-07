@@ -875,6 +875,7 @@ function moveDate(amount: number) {
                 categories={categories}
                 tasks={tasks}
                 records={records}
+                currentTimeColor={theme.primaryBg}
               />
             )}
 

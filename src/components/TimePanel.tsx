@@ -1,9 +1,11 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { Heart } from 'lucide-react'
 import clsx from 'clsx'
 import type { Category, PlannerTask } from '../types'
 import type { RecordSet } from '../plannerTypes'
 import {
   addDays,
+  getPlannerDate,
   getTaskRange,
   localDateAt,
   minutesToTimeLabel,
@@ -26,6 +28,7 @@ type TimePanelProps = {
   captureTargetHeight?: number
   showTaskLabels?: boolean
   hiddenLabelCategoryIds?: number[]
+  currentTimeColor?: string
 }
 
 function TimePanel({
@@ -40,7 +43,20 @@ function TimePanel({
   captureTargetHeight,
   showTaskLabels = true,
   hiddenLabelCategoryIds = [],
+  currentTimeColor = '#111827',
 }: TimePanelProps) {
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    if (captureMode) return
+
+    const updateNow = () => setNow(new Date())
+    updateNow()
+
+    const intervalId = window.setInterval(updateNow, 30_000)
+
+    return () => window.clearInterval(intervalId)
+  }, [captureMode])
   const hiddenLabelCategoryIdSet = useMemo(
     () => new Set(hiddenLabelCategoryIds),
     [hiddenLabelCategoryIds],
@@ -517,6 +533,40 @@ function TimePanel({
       totalHeight,
     } = timeLayout
 
+    const currentTimeMarker = useMemo(() => {
+      // 캡처 화면은 기존 디자인을 그대로 유지함.
+      if (captureMode) return null
+
+      // 현재 시간이 속한 플래너 날짜에서만 표시함.
+      if (getPlannerDate(now, dayStart) !== selectedDate) return null
+
+      const currentMinutes = now.getHours() * 60 + now.getMinutes()
+      let currentOffset = currentMinutes - dayStartMinutes
+
+      if (currentOffset < 0) currentOffset += 24 * 60
+
+      const hourIndex = Math.floor(currentOffset / 60)
+      const minuteInHour = currentOffset % 60
+
+      // 현재 타임 탭은 한 시간 줄이 6칸이므로 한 셀은 10분임.
+      const cellIndex = Math.min(5, Math.floor(minuteInHour / 10))
+      const hourLayout = hourLayouts[hourIndex]
+
+      if (!hourLayout) return null
+
+      return {
+        hourIndex,
+        cellIndex,
+      }
+    }, [
+      captureMode,
+      now,
+      dayStart,
+      selectedDate,
+      dayStartMinutes,
+      hourLayouts,
+    ])
+
   return (
     <section
       className={clsx(
@@ -732,6 +782,42 @@ function TimePanel({
               )
             },
           )}
+
+          {currentTimeMarker && (() => {
+            const markerHourLayout =
+              hourLayouts[currentTimeMarker.hourIndex]
+
+            if (!markerHourLayout) return null
+
+            return (
+              <div
+                className="pointer-events-none absolute right-0 left-7 z-30"
+                style={{
+                  top: markerHourLayout.top,
+                  height: markerHourLayout.height,
+                }}
+                aria-hidden="true"
+              >
+                <div className="grid h-full grid-cols-6">
+                  {Array.from({ length: 6 }).map((_, cellIndex) => (
+                    <div
+                      key={cellIndex}
+                      className="grid h-full place-items-center"
+                    >
+                      {cellIndex === currentTimeMarker.cellIndex && (
+                        <Heart
+                          size={20}
+                          strokeWidth={2.5}
+                          color={currentTimeColor}
+                          fill={currentTimeColor}
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )
+          })()}
         </div>
       </div>
     </section>
