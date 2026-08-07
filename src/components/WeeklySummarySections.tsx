@@ -90,25 +90,37 @@ export function ProgressCycleList({
 }: ProgressCycleListProps) {
   return (
     <section
-      className="h-full rounded-3xl border border-neutral-200 bg-white"
-      style={{ padding: captureMode ? '22px 16px' : '14px 8px' }}
+      className="rounded-3xl border border-neutral-200 bg-white"
+      style={{
+        height: captureMode ? '100%' : undefined,
+        padding: captureMode ? '22px 16px' : '14px',
+      }}
     >
       <div
-        className="mb-2 text-center font-black"
-        style={{ fontSize: captureMode ? 26 : 12 }}
+        className={captureMode ? 'mb-2 text-center font-black' : 'mb-3 font-black'}
+        style={{ fontSize: captureMode ? 26 : 17 }}
       >
         Progress
       </div>
 
       <div
-        style={{
-          display: 'grid',
-          gridTemplateRows: 'repeat(7, minmax(0, 1fr))',
-          height: captureMode
-            ? 'calc(100% - 54px)'
-            : 'calc(100% - 32px)',
-          rowGap: captureMode ? 4 : 2,
-        }}
+        style={
+          captureMode
+            ? {
+                display: 'grid',
+                gridTemplateRows: 'repeat(7, minmax(0, 1fr))',
+                height: 'calc(100% - 54px)',
+                rowGap: 4,
+              }
+            : {
+                display: 'grid',
+                gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
+                gridTemplateRows: 'repeat(2, auto)',
+                rowGap: 12,
+                columnGap: 6,
+                alignItems: 'center',
+              }
+        }
       >
         {WEEKDAY_LABELS.map((label, index) => (
           <ProgressRing
@@ -278,7 +290,7 @@ type MoodTrackerProps = {
 }
 
 const TRACKER_LABEL_WIDTH_CAPTURE = 112
-const TRACKER_LABEL_WIDTH_SCREEN = 86
+const TRACKER_LABEL_WIDTH_SCREEN = 68
 
 export function MoodTracker({
   moodLabels,
@@ -306,7 +318,7 @@ export function MoodTracker({
   const labelColumnWidth = captureMode
     ? TRACKER_LABEL_WIDTH_CAPTURE
     : TRACKER_LABEL_WIDTH_SCREEN
-  const columnGap = captureMode ? 14 : 10
+  const columnGap = captureMode ? 14 : 8
   const axisHeight = captureMode ? 30 : 22
   const lineWidth = captureMode ? 3 : 2
   const dotSize = captureMode ? 12 : 8
@@ -352,7 +364,9 @@ export function MoodTracker({
           {resolvedLabels.map((label) => (
             <div
               key={label}
-              className="flex min-w-0 items-center justify-end pr-4 font-black text-neutral-500"
+              className={`flex min-w-0 items-center justify-end font-black text-neutral-500 ${
+                captureMode ? 'pr-4' : 'pr-2'
+              }`}
               style={{ fontSize: captureMode ? 21 : 10 }}
             >
               <span className="truncate">{label}</span>
@@ -497,7 +511,7 @@ export function HabitTracker({
   const labelColumnWidth = captureMode
     ? TRACKER_LABEL_WIDTH_CAPTURE
     : TRACKER_LABEL_WIDTH_SCREEN
-  const columnGap = captureMode ? 14 : 10
+  const columnGap = captureMode ? 14 : 8
   const headerHeight = captureMode ? 30 : 24
 
   return (

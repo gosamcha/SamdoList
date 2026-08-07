@@ -612,31 +612,27 @@ function WeeklySummaryPage({
       </header>
 
       <section className="mx-auto max-w-6xl px-3 py-3">
-        <div
-          className="grid items-stretch gap-3"
-          style={{
-            gridTemplateColumns: 'clamp(82px, 19vw, 155px) minmax(0, 1fr)',
-          }}
-        >
-          <ProgressCycleList progressRates={progressRates} theme={theme} />
+        <div className="space-y-3">
+          <ProgressCycleList
+            progressRates={progressRates}
+            theme={theme}
+          />
 
-          <div className="min-w-0 space-y-3">
-            <HabitTracker
-              habits={habits}
-              habitStatuses={habitStatuses}
-              theme={theme}
-              onCycleStatus={cycleHabitStatus}
-            />
+          <HabitTracker
+            habits={habits}
+            habitStatuses={habitStatuses}
+            theme={theme}
+            onCycleStatus={cycleHabitStatus}
+          />
 
-            <MoodTracker
-              moodLabels={moodLabels}
-              moods={moods}
-              theme={theme}
-              onChangeMood={changeMood}
-            />
+          <MoodTracker
+            moodLabels={moodLabels}
+            moods={moods}
+            theme={theme}
+            onChangeMood={changeMood}
+          />
 
-            <SleepTracker rows={sleepRows} theme={theme} />
-          </div>
+          <SleepTracker rows={sleepRows} theme={theme} />
         </div>
 
         <div className="mt-3 rounded-3xl border border-neutral-200 bg-white p-4">
