@@ -11,6 +11,7 @@ import CloudRestore from './components/CloudRestore'
 import { db } from './db'
 import { supabase } from './lib/supabase'
 import { getPlannerDate } from './utils/time'
+import { startRealtimeSync } from './lib/realtimeSync'
 
 type PageName = 'daily' | 'weekly'
 
@@ -53,6 +54,18 @@ function App() {
 
     setSelectedDate(getPlannerDate(new Date(), dayStart))
   }, [dayStart, selectedDate])
+
+  useEffect(() => {
+    if (!session?.user.id) return
+
+    const stopRealtimeSync = startRealtimeSync(
+      session.user.id,
+    )
+
+    return () => {
+      stopRealtimeSync()
+    }
+  }, [session?.user.id])
 
   if (authLoading) {
     return null
