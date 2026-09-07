@@ -6,6 +6,7 @@ import DailyPlannerPage from './pages/DailyPlannerPage'
 import WeeklySummaryPage from './pages/WeeklySummaryPage'
 import LoginScreen from './components/LoginScreen'
 import InitialCloudUpload from './components/InitialCloudUpload'
+import CloudRestore from './components/CloudRestore'
 
 import { db } from './db'
 import { supabase } from './lib/supabase'
@@ -21,6 +22,7 @@ function App() {
   const [authLoading, setAuthLoading] = useState(true)
 
   const [showInitialUpload, setShowInitialUpload] = useState(false)
+  const [showCloudRestore, setShowCloudRestore] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -66,6 +68,10 @@ function App() {
   if (isInitialUpload || showInitialUpload) {
     return <InitialCloudUpload />
   }
+  if (showCloudRestore) {
+    return <CloudRestore />
+  }
+  
 
   if (selectedDate === null) {
     return null
@@ -89,20 +95,39 @@ return (
       onOpenWeekly={() => setPage('weekly')}
     />
 
-    <button
-      type="button"
-      onClick={() => setShowInitialUpload(true)}
-      style={{
-        position: 'fixed',
-        right: '12px',
-        bottom: '12px',
-        zIndex: 9999,
-        padding: '8px 12px',
-        fontSize: '12px',
-      }}
-    >
-      Cloud Migration
-    </button>
+    <div
+        style={{
+          position: 'fixed',
+          right: '12px',
+          bottom: '12px',
+          zIndex: 9999,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}
+      >
+      <button
+        type="button"
+        onClick={() => setShowInitialUpload(true)}
+        style={{
+          padding: '8px 12px',
+          fontSize: '12px',
+        }}
+      >
+        Cloud Migration
+      </button>
+
+      <button
+        type="button"
+        onClick={() => setShowCloudRestore(true)}
+        style={{
+          padding: '8px 12px',
+          fontSize: '12px',
+        }}
+      >
+        Cloud Restore
+      </button>
+    </div>
   </>
 ) }
 
