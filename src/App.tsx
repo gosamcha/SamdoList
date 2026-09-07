@@ -1,8 +1,14 @@
 import { useEffect, useState } from 'react'
+import type { Session } from '@supabase/supabase-js'
 import { useLiveQuery } from 'dexie-react-hooks'
+
 import DailyPlannerPage from './pages/DailyPlannerPage'
 import WeeklySummaryPage from './pages/WeeklySummaryPage'
+import LoginScreen from './components/LoginScreen'
+import InitialCloudUpload from './components/InitialCloudUpload'
+
 import { db } from './db'
+import { supabase } from './lib/supabase'
 import { getPlannerDate } from './utils/time'
 
 type PageName = 'daily' | 'weekly'
@@ -10,6 +16,26 @@ type PageName = 'daily' | 'weekly'
 function App() {
   const [page, setPage] = useState<PageName>('daily')
   const [selectedDate, setSelectedDate] = useState<string | null>(null)
+
+  const [session, setSession] = useState<Session | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      setAuthLoading(false)
+    })
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession)
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [])
 
   const dayStart = useLiveQuery(async () => {
     const result = await db.settings.get('dayStart')
@@ -24,7 +50,24 @@ function App() {
     setSelectedDate(getPlannerDate(new Date(), dayStart))
   }, [dayStart, selectedDate])
 
-  if (selectedDate === null) return null
+  if (authLoading) {
+    return null
+  }
+
+  if (!session) {
+    return <LoginScreen />
+  }
+
+  const isInitialUpload =
+  new URLSearchParams(window.location.search).get('initialUpload') === '1'
+
+  if (isInitialUpload) {
+    return <InitialCloudUpload />
+  }
+
+  if (selectedDate === null) {
+    return null
+  }
 
   if (page === 'weekly') {
     return (

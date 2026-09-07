@@ -4,12 +4,14 @@ export type MoodLevel = 0 | 1 | 2 | 3
 
 export interface Category {
   id?: number
+  syncId?: string
   name: string
   color: string
 }
 
 export interface PlannerTask {
   id?: number
+  syncId?: string
   date: string
   categoryId: number
   title: string
@@ -43,6 +45,7 @@ export type DayTemplateTask = {
 
 export type DayTemplate = {
   id?: number
+  syncId?: string
   name: string
   wakeTime?: string
   sleepTime?: string
