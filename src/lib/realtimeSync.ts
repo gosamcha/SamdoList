@@ -458,3 +458,55 @@ export function startRealtimeSync(userId: string) {
     void supabase.removeChannel(channel)
   }
 }
+
+export async function syncCloudSnapshotToLocal(
+  userId: string,
+) {
+  const { data, error } = await supabase
+    .from('sync_items')
+    .select(
+      'id, user_id, collection, item_key, data, updated_at, deleted_at',
+    )
+    .eq('user_id', userId)
+
+  if (error) {
+    throw error
+  }
+
+  const rows = (data ?? []) as SyncItem[]
+
+  /*
+   * 카테고리가 먼저 생성되어야
+   * Task / Template의 categorySyncId를
+   * 현재 기기의 categoryId로 변환할 수 있음.
+   */
+  const priority: Record<string, number> = {
+    categories: 0,
+    settings: 1,
+    tasks: 2,
+    records: 3,
+    dayTemplates: 4,
+    weeklyRecords: 5,
+  }
+
+  rows.sort((a, b) => {
+    return (
+      (priority[a.collection] ?? 99) -
+      (priority[b.collection] ?? 99)
+    )
+  })
+
+  try {
+    applyingRemoteChange = true
+
+    for (const row of rows) {
+      await applyCloudItem(row)
+    }
+
+    console.log(
+      `SamdoList startup sync: ${rows.length} items`,
+    )
+  } finally {
+    applyingRemoteChange = false
+  }
+}
