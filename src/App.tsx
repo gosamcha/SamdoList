@@ -5,13 +5,12 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import DailyPlannerPage from './pages/DailyPlannerPage'
 import WeeklySummaryPage from './pages/WeeklySummaryPage'
 import LoginScreen from './components/LoginScreen'
-import InitialCloudUpload from './components/InitialCloudUpload'
-import CloudRestore from './components/CloudRestore'
 
 import { db } from './db'
 import { supabase } from './lib/supabase'
 import { getPlannerDate } from './utils/time'
 import { startRealtimeSync } from './lib/realtimeSync'
+import { startLocalChangeSync } from './lib/localSync'
 
 type PageName = 'daily' | 'weekly'
 
@@ -21,9 +20,6 @@ function App() {
 
   const [session, setSession] = useState<Session | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
-
-  const [showInitialUpload, setShowInitialUpload] = useState(false)
-  const [showCloudRestore, setShowCloudRestore] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -67,24 +63,19 @@ function App() {
     }
   }, [session?.user.id])
 
+  useEffect(() => {
+  if (!session?.user.id) return
+
+    startLocalChangeSync()
+  }, [session?.user.id])
+
   if (authLoading) {
     return null
   }
 
   if (!session) {
     return <LoginScreen />
-  }
-
-  const isInitialUpload =
-  new URLSearchParams(window.location.search).get('initialUpload') === '1'
-
-  if (isInitialUpload || showInitialUpload) {
-    return <InitialCloudUpload />
-  }
-  if (showCloudRestore) {
-    return <CloudRestore />
-  }
-  
+  }  
 
   if (selectedDate === null) {
     return null
@@ -107,40 +98,6 @@ return (
       onSelectedDateChange={setSelectedDate}
       onOpenWeekly={() => setPage('weekly')}
     />
-
-    <div
-        style={{
-          position: 'fixed',
-          right: '12px',
-          bottom: '12px',
-          zIndex: 9999,
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '8px',
-        }}
-      >
-      <button
-        type="button"
-        onClick={() => setShowInitialUpload(true)}
-        style={{
-          padding: '8px 12px',
-          fontSize: '12px',
-        }}
-      >
-        Cloud Migration
-      </button>
-
-      <button
-        type="button"
-        onClick={() => setShowCloudRestore(true)}
-        style={{
-          padding: '8px 12px',
-          fontSize: '12px',
-        }}
-      >
-        Cloud Restore
-      </button>
-    </div>
   </>
 ) }
 
