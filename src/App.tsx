@@ -20,6 +20,8 @@ function App() {
   const [session, setSession] = useState<Session | null>(null)
   const [authLoading, setAuthLoading] = useState(true)
 
+  const [showInitialUpload, setShowInitialUpload] = useState(false)
+
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       setSession(data.session)
@@ -61,7 +63,7 @@ function App() {
   const isInitialUpload =
   new URLSearchParams(window.location.search).get('initialUpload') === '1'
 
-  if (isInitialUpload) {
+  if (isInitialUpload || showInitialUpload) {
     return <InitialCloudUpload />
   }
 
@@ -79,13 +81,29 @@ function App() {
     )
   }
 
-  return (
+return (
+  <>
     <DailyPlannerPage
       selectedDate={selectedDate}
       onSelectedDateChange={setSelectedDate}
       onOpenWeekly={() => setPage('weekly')}
     />
-  )
-}
+
+    <button
+      type="button"
+      onClick={() => setShowInitialUpload(true)}
+      style={{
+        position: 'fixed',
+        right: '12px',
+        bottom: '12px',
+        zIndex: 9999,
+        padding: '8px 12px',
+        fontSize: '12px',
+      }}
+    >
+      Cloud Migration
+    </button>
+  </>
+) }
 
 export default App
