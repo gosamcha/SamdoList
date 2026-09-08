@@ -41,6 +41,7 @@ type CloudTask = {
   syncId: string
   date: string
   categorySyncId?: string
+  order?: number
   title: string
   startTime?: string
   endTime?: string
@@ -52,6 +53,7 @@ type CloudTask = {
 type CloudTemplateTask = {
   categorySyncId?: string
   categoryName: string
+  order?: number
   title: string
   startTime?: string
   endTime?: string
@@ -198,10 +200,16 @@ async function applyCloudItem(row: SyncItem) {
         return
       }
 
+      const existing = await findTaskBySyncId(row.item_key)
+
       const localTask: Omit<PlannerTask, 'id'> = {
         syncId: row.item_key,
         date: task.date,
         categoryId: category.id,
+        order:
+          task.order ??
+          existing?.order ??
+          task.createdAt,
         title: task.title,
         startTime: task.startTime,
         endTime: task.endTime,
@@ -209,8 +217,6 @@ async function applyCloudItem(row: SyncItem) {
         status: task.status,
         createdAt: task.createdAt,
       }
-
-      const existing = await findTaskBySyncId(row.item_key)
 
       if (existing?.id !== undefined) {
         await db.tasks.update(existing.id, localTask)
@@ -306,6 +312,7 @@ async function applyCloudItem(row: SyncItem) {
         tasks.push({
           categoryId,
           categoryName: task.categoryName,
+          order: task.order,
           title: task.title,
           startTime: task.startTime,
           endTime: task.endTime,

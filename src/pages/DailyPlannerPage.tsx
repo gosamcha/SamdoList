@@ -326,9 +326,11 @@ function moveDate(amount: number) {
     const nextMemo = value.slice(0, 300)
 
     setDailyMemo(nextMemo)
+  }
 
-    void updateDailyRecord({
-      memo: nextMemo,
+  async function saveDailyMemo() {
+    await updateDailyRecord({
+      memo: dailyMemo,
     })
   }
 
@@ -338,28 +340,28 @@ function moveDate(amount: number) {
     const title = draft.title.trim()
     if (!title) return
 
-    // No Time이면 시간을 저장하지 않고,
-    // XX:XX 상태인 빈 문자열도 undefined로 변환함
+    // No Time이면 시작/종료 시간을 모두 저장하지 않음.
+    // No End Time이면 시작 시간만 저장함.
     const startTime = draft.hideTime
       ? undefined
       : draft.startTime || undefined
 
-    const endTime = draft.hideTime
-      ? undefined
-      : draft.endTime || undefined
+    const endTime =
+      draft.hideTime || draft.noEndTime
+        ? undefined
+        : draft.endTime || undefined
 
-    // No Time을 해제했다면 시작·종료 시간을 모두 설정해야 함
-    if (!draft.hideTime && (!startTime || !endTime)) {
-      alert('Set both the start and end times')
+    if (!draft.hideTime && !startTime) {
+      alert('Set the start time')
       return
     }
 
-    if (!draft.hideTime && startTime === endTime) {
-      alert('Start and end times cannot be the same')
+    if (!draft.hideTime && !draft.noEndTime && !endTime) {
+      alert('Set the end time or select No End Time')
       return
     }
 
-    if (!draft.hideTime && startTime === endTime) {
+    if (startTime && endTime && startTime === endTime) {
       alert('Start and end times cannot be the same')
       return
     }
@@ -375,9 +377,20 @@ function moveDate(amount: number) {
         memo,
       })
     } else {
+      const categoryTasks = tasks.filter(
+        (task) => task.categoryId === draft.categoryId,
+      )
+
+      const nextOrder =
+        Math.max(
+          -1,
+          ...categoryTasks.map((task) => task.order ?? -1),
+        ) + 1
+
       await db.tasks.add({
         date: selectedDate,
         categoryId: draft.categoryId,
+        order: nextOrder,
         title,
         startTime,
         endTime,
@@ -415,6 +428,7 @@ function moveDate(amount: number) {
       startTime,
       endTime,
       hideTime: false,
+      noEndTime: false,
       memo: '',
     })
   }
@@ -428,7 +442,8 @@ function moveDate(amount: number) {
       startTime: task.startTime ?? '',
       endTime: task.endTime ?? '',
 
-      hideTime: !(task.startTime && task.endTime),
+      hideTime: !task.startTime,
+      noEndTime: Boolean(task.startTime && !task.endTime),
       memo: task.memo ?? '',
     })
   }
@@ -438,6 +453,136 @@ function moveDate(amount: number) {
 
     await db.tasks.update(task.id, {
       status: nextStatus[task.status],
+    })
+  }
+
+
+  function compareTasksByManualOrder(
+    a: PlannerTask,
+    b: PlannerTask,
+  ) {
+    const aOrder = a.order ?? Number.MAX_SAFE_INTEGER
+    const bOrder = b.order ?? Number.MAX_SAFE_INTEGER
+
+    if (aOrder !== bOrder) return aOrder - bOrder
+
+    if (a.createdAt !== b.createdAt) {
+      return a.createdAt - b.createdAt
+    }
+
+    return (
+      (a.id ?? Number.MAX_SAFE_INTEGER) -
+      (b.id ?? Number.MAX_SAFE_INTEGER)
+    )
+  }
+
+  async function moveTask(
+    taskId: number,
+    targetCategoryId: number,
+    targetTaskId?: number,
+  ) {
+    const currentTasks = await db.tasks
+      .where('date')
+      .equals(selectedDate)
+      .toArray()
+
+    const activeTask = currentTasks.find(
+      (task) => task.id === taskId,
+    )
+
+    if (!activeTask) return
+
+    const sourceCategoryId = activeTask.categoryId
+
+    if (
+      sourceCategoryId === targetCategoryId &&
+      targetTaskId === taskId
+    ) {
+      return
+    }
+
+    const sourceTasks = currentTasks
+      .filter(
+        (task) =>
+          task.categoryId === sourceCategoryId &&
+          task.id !== taskId,
+      )
+      .sort(compareTasksByManualOrder)
+
+    const targetTasks = currentTasks
+      .filter(
+        (task) =>
+          task.categoryId === targetCategoryId &&
+          task.id !== taskId,
+      )
+      .sort(compareTasksByManualOrder)
+
+    let targetIndex = targetTasks.length
+
+    if (targetTaskId !== undefined) {
+      const foundIndex = targetTasks.findIndex(
+        (task) => task.id === targetTaskId,
+      )
+
+      if (foundIndex >= 0) {
+        targetIndex = foundIndex
+      }
+    }
+
+    // 같은 카테고리 안에서 아래쪽으로 이동할 때는
+    // 원래 위치가 빠진 만큼 인덱스를 한 칸 보정함.
+    if (
+      sourceCategoryId === targetCategoryId &&
+      targetTaskId !== undefined
+    ) {
+      const originalOrdered = currentTasks
+        .filter((task) => task.categoryId === sourceCategoryId)
+        .sort(compareTasksByManualOrder)
+
+      const sourceIndex = originalOrdered.findIndex(
+        (task) => task.id === taskId,
+      )
+      const originalTargetIndex = originalOrdered.findIndex(
+        (task) => task.id === targetTaskId,
+      )
+
+      if (
+        sourceIndex >= 0 &&
+        originalTargetIndex >= 0 &&
+        sourceIndex < originalTargetIndex
+      ) {
+        targetIndex += 1
+      }
+    }
+
+    targetIndex = Math.max(0, Math.min(targetIndex, targetTasks.length))
+
+    targetTasks.splice(targetIndex, 0, {
+      ...activeTask,
+      categoryId: targetCategoryId,
+    })
+
+    await db.transaction('rw', db.tasks, async () => {
+      if (sourceCategoryId !== targetCategoryId) {
+        for (let index = 0; index < sourceTasks.length; index += 1) {
+          const task = sourceTasks[index]
+          if (task.id === undefined) continue
+
+          await db.tasks.update(task.id, {
+            order: index,
+          })
+        }
+      }
+
+      for (let index = 0; index < targetTasks.length; index += 1) {
+        const task = targetTasks[index]
+        if (task.id === undefined) continue
+
+        await db.tasks.update(task.id, {
+          categoryId: targetCategoryId,
+          order: index,
+        })
+      }
     })
   }
 
@@ -523,6 +668,7 @@ function moveDate(amount: number) {
         categoryId: task.categoryId,
         categoryName:
           categoryMap.get(task.categoryId)?.name ?? '',
+        order: task.order,
         title: task.title,
         startTime: task.startTime,
         endTime: task.endTime,
@@ -602,6 +748,7 @@ function moveDate(amount: number) {
         {
           date: selectedDate,
           categoryId: matchedCategory.id,
+          order: templateTask.order ?? index,
           title: templateTask.title,
           startTime: templateTask.startTime,
           endTime: templateTask.endTime,
@@ -904,6 +1051,7 @@ function moveDate(amount: number) {
                 onCreateTask={openNewTask}
                 onEditTask={openEditTask}
                 onCycleStatus={cycleTaskStatus}
+                onMoveTask={moveTask}
               />
             )}
           </div>
@@ -937,6 +1085,7 @@ function moveDate(amount: number) {
             onChange={(event) =>
               changeDailyMemo(event.target.value)
             }
+            onBlur={() => void saveDailyMemo()}
             placeholder="A short note about today"
             className="
               min-h-24

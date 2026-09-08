@@ -1,4 +1,5 @@
 import Dexie, { type Table } from 'dexie'
+import { getTaskRange } from './utils/time'
 import type {
   AppSetting,
   Category,
@@ -47,6 +48,86 @@ class SamdoListDB extends Dexie {
       dayTemplates: '++id,&name,updatedAt',
       weeklyRecords: 'weekStart',
     })
+
+    this.version(4)
+      .stores({
+        categories: '++id,name',
+        tasks: '++id,date,categoryId,status,createdAt',
+        records: 'date',
+        settings: 'key',
+        dayTemplates: '++id,&name,updatedAt',
+        weeklyRecords: 'weekStart',
+      })
+      .upgrade(async (transaction) => {
+        const tasks =
+          (await transaction.table('tasks').toArray()) as PlannerTask[]
+
+        const dayStartSetting =
+          (await transaction
+            .table('settings')
+            .get('dayStart')) as AppSetting | undefined
+
+        const dayStart = dayStartSetting?.value ?? '08:00'
+        const groups = new Map<string, PlannerTask[]>()
+
+        for (const task of tasks) {
+          const key = `${task.date}__${task.categoryId}`
+          const group = groups.get(key) ?? []
+          group.push(task)
+          groups.set(key, group)
+        }
+
+        function compareLegacyTasks(
+          a: PlannerTask,
+          b: PlannerTask,
+        ) {
+          const aHasRange = Boolean(a.startTime && a.endTime)
+          const bHasRange = Boolean(b.startTime && b.endTime)
+
+          if (aHasRange !== bHasRange) {
+            return aHasRange ? -1 : 1
+          }
+
+          if (aHasRange && bHasRange) {
+            const aStart = getTaskRange(
+              a.startTime!,
+              a.endTime!,
+              dayStart,
+            ).startOffset
+
+            const bStart = getTaskRange(
+              b.startTime!,
+              b.endTime!,
+              dayStart,
+            ).startOffset
+
+            if (aStart !== bStart) return aStart - bStart
+          }
+
+          if (a.createdAt !== b.createdAt) {
+            return a.createdAt - b.createdAt
+          }
+
+          return (
+            (a.id ?? Number.MAX_SAFE_INTEGER) -
+            (b.id ?? Number.MAX_SAFE_INTEGER)
+          )
+        }
+
+        for (const group of groups.values()) {
+          group.sort(compareLegacyTasks)
+
+          for (let index = 0; index < group.length; index += 1) {
+            const task = group[index]
+            if (task.id === undefined) continue
+
+            await transaction
+              .table('tasks')
+              .update(task.id, { order: index })
+          }
+        }
+      })
+
   }
 }
 

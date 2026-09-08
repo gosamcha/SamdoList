@@ -386,7 +386,10 @@ function WeeklySummaryPage({
   function changeWeeklyMemo(value: string) {
     const nextMemo = value.slice(0, 300)
     setWeeklyMemo(nextMemo)
-    void updateWeeklyRecord({ memo: nextMemo })
+  }
+
+  async function saveWeeklyMemo() {
+    await updateWeeklyRecord({ memo: weeklyMemo })
   }
 
   function changeMood(dayIndex: number, mood: MoodLevel) {
@@ -654,6 +657,7 @@ function WeeklySummaryPage({
             value={weeklyMemo}
             maxLength={300}
             onChange={(event) => changeWeeklyMemo(event.target.value)}
+            onBlur={()=> void saveWeeklyMemo()}
             placeholder="A short note about this week"
             className="min-h-24 w-full resize-none rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-base font-medium leading-relaxed text-neutral-800 outline-none transition placeholder:text-neutral-400 focus:border-neutral-400 focus:bg-white sm:text-sm"
           />

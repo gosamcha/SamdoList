@@ -168,6 +168,7 @@ async function pushTask(syncId: string) {
       syncId,
       date: task.date,
       categorySyncId,
+      order: task.order,
       title: task.title,
       startTime: task.startTime,
       endTime: task.endTime,
@@ -268,6 +269,7 @@ async function pushDayTemplate(syncId: string) {
     cloudTasks.push({
       categorySyncId,
       categoryName: task.categoryName,
+      order: task.order,
       title: task.title,
       startTime: task.startTime,
       endTime: task.endTime,

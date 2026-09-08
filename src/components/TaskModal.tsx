@@ -8,7 +8,8 @@ export type TaskDraft = {
   title: string
   startTime: string
   endTime: string
-  hideTime: boolean // 시간 탭에 표시하지 않을지
+  hideTime: boolean // 시작 시간도 없는 완전한 No Time
+  noEndTime: boolean // 시작 시간만 있고 종료 시간은 없음
   memo: string
 }
 
@@ -71,11 +72,13 @@ function TaskModal({
             />
           </label>
 
-          <div
-            className={draft.hideTime ? 'opacity-45' : ''}
-          >
+          <div>
             <div className="grid grid-cols-2 gap-2">
-              <label className="block text-sm font-bold">
+              <label
+                className={`block text-sm font-bold ${
+                  draft.hideTime ? 'opacity-45' : ''
+                }`}
+              >
                 START
                 <TimeSelect
                   value={draft.startTime}
@@ -89,11 +92,17 @@ function TaskModal({
                 />
               </label>
 
-              <label className="block text-sm font-bold">
+              <label
+                className={`block text-sm font-bold ${
+                  draft.hideTime || draft.noEndTime
+                    ? 'opacity-45'
+                    : ''
+                }`}
+              >
                 END
                 <TimeSelect
                   value={draft.endTime}
-                  disabled={draft.hideTime}
+                  disabled={draft.hideTime || draft.noEndTime}
                   onChange={(value) =>
                     onChange({
                       ...draft,
@@ -103,22 +112,49 @@ function TaskModal({
                 />
               </label>
             </div>
-          </div>
 
-          <label className="flex items-center gap-2 text-sm font-bold text-neutral-600">
-            <input
-              type="checkbox"
-              checked={draft.hideTime}
-              onChange={(event) =>
-                onChange({
-                  ...draft,
-                  hideTime: event.target.checked,
-                })
-              }
-              className="h-4 w-4"
-            />
-            No Time
-          </label>
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2">
+              <label className="flex items-center gap-2 text-sm font-bold text-neutral-600">
+                <input
+                  type="checkbox"
+                  checked={draft.hideTime}
+                  onChange={(event) => {
+                    const checked = event.target.checked
+
+                    onChange({
+                      ...draft,
+                      hideTime: checked,
+                      noEndTime: checked ? false : draft.noEndTime,
+                    })
+                  }}
+                  className="h-4 w-4"
+                />
+                No Time
+              </label>
+
+              <label
+                className={`flex items-center gap-2 text-sm font-bold ${
+                  draft.hideTime
+                    ? 'text-neutral-300'
+                    : 'text-neutral-600'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={draft.noEndTime}
+                  disabled={draft.hideTime}
+                  onChange={(event) =>
+                    onChange({
+                      ...draft,
+                      noEndTime: event.target.checked,
+                    })
+                  }
+                  className="h-4 w-4"
+                />
+                No End Time
+              </label>
+            </div>
+          </div>
 
           <label className="block text-sm font-bold">
             MEMO

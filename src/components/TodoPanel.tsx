@@ -1,22 +1,61 @@
-import { useMemo } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { useMemo, type ReactNode } from 'react'
+import { ChevronDown, GripVertical } from 'lucide-react'
 import clsx from 'clsx'
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { Category, PlannerTask } from '../types'
 import type { ThemeColors } from '../plannerTypes'
-import { getTaskRange } from '../utils/time'
 
 type TodoPanelProps = {
   categories: Category[]
   tasks: PlannerTask[]
+  // CaptureView 등 기존 호출부와의 호환성을 위해 유지함.
+  // Todo 정렬에는 더 이상 시간을 사용하지 않음.
   dayStart: string
   theme: ThemeColors
   onCreateTask: (category: Category) => void
   onEditTask: (task: PlannerTask) => void
   onCycleStatus: (task: PlannerTask) => void
+  onMoveTask?: (
+    taskId: number,
+    targetCategoryId: number,
+    targetTaskId?: number,
+  ) => void | Promise<void>
   foldedCategoryIds?: number[]
   onToggleCategoryFold?: (categoryId: number) => void | Promise<void>
   hiddenCategoryIds?: number[]
   captureMode?: boolean
+}
+
+function compareTasksByOrder(a: PlannerTask, b: PlannerTask) {
+  const aOrder = a.order ?? Number.MAX_SAFE_INTEGER
+  const bOrder = b.order ?? Number.MAX_SAFE_INTEGER
+
+  if (aOrder !== bOrder) return aOrder - bOrder
+
+  const createdDiff =
+    (a.createdAt ?? Number.MAX_SAFE_INTEGER) -
+    (b.createdAt ?? Number.MAX_SAFE_INTEGER)
+
+  if (createdDiff !== 0) return createdDiff
+
+  return (
+    (a.id ?? Number.MAX_SAFE_INTEGER) -
+    (b.id ?? Number.MAX_SAFE_INTEGER)
+  )
 }
 
 function TodoPanel({
@@ -27,47 +66,39 @@ function TodoPanel({
   onCreateTask,
   onEditTask,
   onCycleStatus,
+  onMoveTask,
   foldedCategoryIds = [],
   onToggleCategoryFold,
   hiddenCategoryIds = [],
   captureMode = false,
 }: TodoPanelProps) {
+  // 기존 CaptureView props와의 호환용. 정렬에는 사용하지 않음.
+  void dayStart
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+  )
+
   const foldedCategoryIdSet = useMemo(
     () => new Set(foldedCategoryIds),
     [foldedCategoryIds],
   )
+
   const hiddenCategoryIdSet = useMemo(
     () => new Set(hiddenCategoryIds),
     [hiddenCategoryIds],
   )
-
-  function compareTasksByStartTime(a: PlannerTask, b: PlannerTask) {
-    const aHasTime = Boolean(a.startTime && a.endTime)
-    const bHasTime = Boolean(b.startTime && b.endTime)
-
-    if (aHasTime !== bHasTime) return aHasTime ? -1 : 1
-
-    if (aHasTime && bHasTime) {
-      const aStart = getTaskRange(a.startTime!, a.endTime!, dayStart).startOffset
-      const bStart = getTaskRange(b.startTime!, b.endTime!, dayStart).startOffset
-
-      if (aStart !== bStart) return aStart - bStart
-    }
-
-    const createdDiff =
-      (a.createdAt ?? Number.MAX_SAFE_INTEGER) -
-      (b.createdAt ?? Number.MAX_SAFE_INTEGER)
-
-    if (createdDiff !== 0) return createdDiff
-    return (a.id ?? Number.MAX_SAFE_INTEGER) - (b.id ?? Number.MAX_SAFE_INTEGER)
-  }
 
   const grouped = categories
     .map((category) => ({
       category,
       tasks: tasks
         .filter((task) => task.categoryId === category.id)
-        .sort(compareTasksByStartTime),
+        .sort(compareTasksByOrder),
     }))
     .filter(({ category, tasks: categoryTasks }) => {
       if (!captureMode) return true
@@ -80,11 +111,52 @@ function TodoPanel({
 
   const uncategorized = tasks
     .filter(
-      (task) => !categories.some((category) => category.id === task.categoryId),
+      (task) =>
+        !categories.some(
+          (category) => category.id === task.categoryId,
+        ),
     )
-    .sort(compareTasksByStartTime)
+    .sort(compareTasksByOrder)
 
-  return (
+  function handleDragEnd(event: DragEndEvent) {
+    if (captureMode || !onMoveTask) return
+
+    const { active, over } = event
+    if (!over) return
+
+    const activeData = active.data.current
+    const overData = over.data.current
+
+    if (
+      activeData?.type !== 'task' ||
+      typeof activeData.taskId !== 'number'
+    ) {
+      return
+    }
+
+    if (
+      overData?.type !== 'task' &&
+      overData?.type !== 'category'
+    ) {
+      return
+    }
+
+    if (typeof overData.categoryId !== 'number') return
+
+    const targetTaskId =
+      overData.type === 'task' &&
+      typeof overData.taskId === 'number'
+        ? overData.taskId
+        : undefined
+
+    void onMoveTask(
+      activeData.taskId,
+      overData.categoryId,
+      targetTaskId,
+    )
+  }
+
+  const content = (
     <section
       className={clsx(
         'overflow-hidden border border-neutral-200 bg-white',
@@ -111,11 +183,8 @@ function TodoPanel({
             categoryId !== undefined &&
             foldedCategoryIdSet.has(categoryId)
 
-          return (
-            <div
-              key={category.id}
-              className={captureMode ? 'mb-4.5' : 'mb-3'}
-            >
+          const categoryBody = (
+            <>
               <div
                 className={clsx(
                   'flex items-center',
@@ -172,27 +241,64 @@ function TodoPanel({
                 )}
               </div>
 
-              {!isFolded && (
-                categoryTasks.length === 0 ? (
+              {!isFolded &&
+                (categoryTasks.length === 0 ? (
                   !captureMode && (
                     <div className="rounded-xl border border-dashed border-neutral-200 p-4 text-sm text-neutral-400">
                       empty
                     </div>
                   )
                 ) : (
-                  <div className="divide-y divide-neutral-200">
-                    {categoryTasks.map((task) => (
-                      <TodoItem
-                        key={task.id}
-                        task={task}
-                        theme={theme}
-                        onCycleStatus={onCycleStatus}
-                        onEditTask={onEditTask}
-                        captureMode={captureMode}
-                      />
-                    ))}
-                  </div>
-                )
+                  <SortableContext
+                    items={categoryTasks.flatMap((task) =>
+                      task.id === undefined
+                        ? []
+                        : [`task:${task.id}`],
+                    )}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="divide-y divide-neutral-200">
+                      {categoryTasks.map((task) =>
+                        task.id === undefined ? (
+                          <TodoItem
+                            key={`task-${task.createdAt}`}
+                            task={task}
+                            theme={theme}
+                            onCycleStatus={onCycleStatus}
+                            onEditTask={onEditTask}
+                            captureMode={captureMode}
+                          />
+                        ) : (
+                          <SortableTodoItem
+                            key={task.id}
+                            task={task}
+                            theme={theme}
+                            onCycleStatus={onCycleStatus}
+                            onEditTask={onEditTask}
+                            captureMode={captureMode}
+                          />
+                        ),
+                      )}
+                    </div>
+                  </SortableContext>
+                ))}
+            </>
+          )
+
+          return (
+            <div
+              key={category.id ?? category.syncId ?? category.name}
+              className={captureMode ? 'mb-4.5' : 'mb-3'}
+            >
+              {categoryId === undefined ? (
+                categoryBody
+              ) : (
+                <DroppableCategory
+                  categoryId={categoryId}
+                  disabled={captureMode || !onMoveTask}
+                >
+                  {categoryBody}
+                </DroppableCategory>
               )}
             </div>
           )
@@ -212,7 +318,7 @@ function TodoPanel({
             <div className="divide-y divide-neutral-200">
               {uncategorized.map((task) => (
                 <TodoItem
-                  key={task.id}
+                  key={task.id ?? task.createdAt}
                   task={task}
                   theme={theme}
                   onCycleStatus={onCycleStatus}
@@ -226,6 +332,53 @@ function TodoPanel({
       </div>
     </section>
   )
+
+  if (captureMode || !onMoveTask) {
+    return content
+  }
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleDragEnd}
+    >
+      {content}
+    </DndContext>
+  )
+}
+
+type DroppableCategoryProps = {
+  categoryId: number
+  disabled?: boolean
+  children: ReactNode
+}
+
+function DroppableCategory({
+  categoryId,
+  disabled = false,
+  children,
+}: DroppableCategoryProps) {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `category:${categoryId}`,
+    disabled,
+    data: {
+      type: 'category',
+      categoryId,
+    },
+  })
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={clsx(
+        'rounded-xl transition-colors',
+        isOver && !disabled && 'bg-neutral-50',
+      )}
+    >
+      {children}
+    </div>
+  )
 }
 
 type TodoItemProps = {
@@ -234,6 +387,58 @@ type TodoItemProps = {
   onCycleStatus: (task: PlannerTask) => void
   onEditTask: (task: PlannerTask) => void
   captureMode?: boolean
+  dragHandle?: ReactNode
+}
+
+function SortableTodoItem(props: TodoItemProps) {
+  const taskId = props.task.id
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: `task:${taskId}`,
+    disabled: taskId === undefined || props.captureMode,
+    data: {
+      type: 'task',
+      taskId,
+      categoryId: props.task.categoryId,
+    },
+  })
+
+  const dragHandle = props.captureMode ? undefined : (
+    <button
+      ref={setActivatorNodeRef}
+      type="button"
+      {...attributes}
+      {...listeners}
+      className="grid h-9 w-6 shrink-0 touch-none place-items-center text-neutral-300 hover:text-neutral-500 active:text-neutral-600"
+      aria-label="Move todo"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <GripVertical size={17} strokeWidth={2.5} />
+    </button>
+  )
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.45 : 1,
+        position: 'relative',
+        zIndex: isDragging ? 20 : undefined,
+      }}
+    >
+      <TodoItem {...props} dragHandle={dragHandle} />
+    </div>
+  )
 }
 
 function TodoItem({
@@ -242,8 +447,14 @@ function TodoItem({
   onCycleStatus,
   onEditTask,
   captureMode = false,
+  dragHandle,
 }: TodoItemProps) {
-  const statusText = task.status === 'done' ? 'O' : task.status === 'partial' ? '△' : ''
+  const statusText =
+    task.status === 'done'
+      ? 'O'
+      : task.status === 'partial'
+        ? '△'
+        : ''
 
   const statusColor =
     task.status === 'done'
@@ -252,7 +463,11 @@ function TodoItem({
         ? theme.statusPartial
         : theme.statusTodo
 
-  const hasTime = Boolean(task.startTime && task.endTime)
+  const timeText = task.startTime
+    ? task.endTime
+      ? `${task.startTime} - ${task.endTime}`
+      : task.startTime
+    : null
 
   return (
     <div
@@ -261,7 +476,8 @@ function TodoItem({
         captureMode ? 'gap-3 py-2.5' : 'gap-2 py-2',
       )}
     >
-      {/* 체크박스만 상태 변경 담당 */}
+      {!captureMode && dragHandle}
+
       <button
         type="button"
         onClick={() => onCycleStatus(task)}
@@ -279,7 +495,6 @@ function TodoItem({
         {statusText}
       </button>
 
-      {/* 체크박스를 제외한 투두 영역을 누르면 수정 팝업 */}
       <button
         type="button"
         onClick={() => onEditTask(task)}
@@ -298,7 +513,7 @@ function TodoItem({
           {task.title}
         </div>
 
-        {hasTime && (
+        {timeText && (
           <div
             className={clsx(
               'font-semibold text-neutral-400',
@@ -307,13 +522,12 @@ function TodoItem({
                 : 'mt-0.5 text-xs',
             )}
           >
-            {task.startTime} - {task.endTime}
+            {timeText}
           </div>
         )}
       </button>
     </div>
   )
 }
-
 
 export default TodoPanel

@@ -14,6 +14,7 @@ export interface PlannerTask {
   syncId?: string
   date: string
   categoryId: number
+  order?: number
   title: string
   startTime?: string
   endTime?: string
@@ -37,6 +38,7 @@ export interface AppSetting {
 export type DayTemplateTask = {
   categoryId: number
   categoryName: string
+  order?: number
   title: string
   startTime?: string
   endTime?: string
