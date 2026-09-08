@@ -86,12 +86,23 @@ function DailyPlannerPage({
   const dateInputRef = useRef<HTMLInputElement>(null)
   const captureRef = useRef<HTMLDivElement>(null)
   const [captureSaving, setCaptureSaving] = useState(false)
+
+  const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
   
 
 // yyyy-mm-dd 형태를 07/09 형태로 바꿈
 const displayDate = useMemo(() => {
   return selectedDate.slice(5).replace('-', '/')
 }, [selectedDate])
+
+const displayWeekday = useMemo(()=> {
+  const [year, month, day] = selectedDate.split('-').map(Number);
+  const date = new  Date(year, month-1, day);
+
+  return WEEKDAYS[date.getDay()];
+
+}, [selectedDate]);
+
 
 const dayTemplates =
   useLiveQuery(
@@ -684,7 +695,10 @@ function moveDate(amount: number) {
                   letterSpacing: '-0.04em',
                 }}
               >
-                {displayDate}
+                <div className="date-display">
+                  <span className="date-main">{displayDate}</span>
+                  <span className="date-weekday">{displayWeekday}</span>
+                </div>
               </button>
 
               <input
@@ -982,6 +996,7 @@ function moveDate(amount: number) {
         captureRef={captureRef}
         selectedDate={selectedDate}
         displayDate={displayDate}
+        displayWeekday={displayWeekday}
         dayStart={dayStart}
         categories={categories}
         tasks={tasks}

@@ -322,6 +322,7 @@ type CaptureViewProps = {
   captureRef: RefObject<HTMLDivElement | null>
   selectedDate: string
   displayDate: string
+  displayWeekday: string
   dayStart: string
   categories: Category[]
   tasks: PlannerTask[]
@@ -337,6 +338,7 @@ function CaptureView({
   captureRef,
   selectedDate,
   displayDate,
+  displayWeekday,
   dayStart,
   categories,
   tasks,
@@ -424,7 +426,10 @@ function CaptureView({
                 letterSpacing: '-0.055em',
               }}
             >
-              {displayDate}
+              <div className="date-display">
+                <span className="date-main">{displayDate}</span>
+                <span className="date-weekday">{displayWeekday}</span>
+              </div>
             </div>
 
             <div className="flex min-h-[56px] min-w-0 flex-1 items-end pb-1">

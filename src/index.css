@@ -31,3 +31,20 @@ select {
 button {
   cursor: pointer;
 }
+
+.date-display {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.date-main {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+.date-weekday {
+  font-size: 0.60em;
+  font-weight: 600;
+  color: #c1c5cd;
+}
