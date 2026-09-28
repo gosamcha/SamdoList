@@ -1,4 +1,4 @@
-import { useMemo, type ReactNode } from 'react'
+import { useMemo, type ReactNode, useState } from 'react'
 import { ChevronDown, GripVertical } from 'lucide-react'
 import clsx from 'clsx'
 import {
@@ -34,6 +34,9 @@ type TodoPanelProps = {
     targetCategoryId: number,
     targetTaskId?: number,
   ) => void | Promise<void>
+  todayDate: string
+  onMoveToTomorrow: (task: PlannerTask) => void | Promise<void>
+  onBringToToday: (task: PlannerTask) => void | Promise<void>
   foldedCategoryIds?: number[]
   onToggleCategoryFold?: (categoryId: number) => void | Promise<void>
   hiddenCategoryIds?: number[]
@@ -67,6 +70,9 @@ function TodoPanel({
   onEditTask,
   onCycleStatus,
   onMoveTask,
+  todayDate,
+  onMoveToTomorrow,
+  onBringToToday,
   foldedCategoryIds = [],
   onToggleCategoryFold,
   hiddenCategoryIds = [],
@@ -266,6 +272,9 @@ function TodoPanel({
                             theme={theme}
                             onCycleStatus={onCycleStatus}
                             onEditTask={onEditTask}
+                            todayDate={todayDate}
+                            onMoveToTomorrow={onMoveToTomorrow}
+                            onBringToToday={onBringToToday}
                             captureMode={captureMode}
                           />
                         ) : (
@@ -275,6 +284,9 @@ function TodoPanel({
                             theme={theme}
                             onCycleStatus={onCycleStatus}
                             onEditTask={onEditTask}
+                            todayDate={todayDate}
+                            onMoveToTomorrow={onMoveToTomorrow}
+                            onBringToToday={onBringToToday}
                             captureMode={captureMode}
                           />
                         ),
@@ -323,6 +335,9 @@ function TodoPanel({
                   theme={theme}
                   onCycleStatus={onCycleStatus}
                   onEditTask={onEditTask}
+                  todayDate={todayDate}
+                  onMoveToTomorrow={onMoveToTomorrow}
+                  onBringToToday={onBringToToday}
                   captureMode={captureMode}
                 />
               ))}
@@ -386,6 +401,10 @@ type TodoItemProps = {
   theme: ThemeColors
   onCycleStatus: (task: PlannerTask) => void
   onEditTask: (task: PlannerTask) => void
+  todayDate: string
+  onMoveToTomorrow: (task: PlannerTask) => void | Promise<void>
+  onBringToToday: (task: PlannerTask) => void | Promise<void>
+
   captureMode?: boolean
   dragHandle?: ReactNode
 }
@@ -446,9 +465,14 @@ function TodoItem({
   theme,
   onCycleStatus,
   onEditTask,
+  todayDate,
+  onMoveToTomorrow,
+  onBringToToday,
   captureMode = false,
   dragHandle,
 }: TodoItemProps) {
+  const [menuOpen, setMenuOpen] = useState(false)
+
   const statusText =
     task.status === 'done'
       ? 'O'
@@ -526,6 +550,89 @@ function TodoItem({
           </div>
         )}
       </button>
+
+      {!captureMode && (
+        <div className="relative shrink-0">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((prev) => !prev)}
+            className="
+              grid
+              h-9
+              w-9
+              place-items-center
+              rounded-xl
+              text-xl
+              font-black
+              text-neutral-400
+              hover:bg-neutral-100
+              hover:text-neutral-700
+            "
+            aria-label="Todo options"
+          >
+            ⋯
+          </button>
+
+          {menuOpen && (
+            <div
+              className="
+                absolute
+                right-0
+                top-10
+                z-40
+                w-44
+                overflow-hidden
+                rounded-xl
+                border
+                border-neutral-200
+                bg-white
+                py-1
+                shadow-lg
+              "
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  setMenuOpen(false)
+                  void onMoveToTomorrow(task)
+                }}
+                className="
+                  w-full
+                  px-4
+                  py-2.5
+                  text-left
+                  text-sm
+                  font-bold
+                  hover:bg-neutral-100
+                "
+              >
+                → Tomorrow
+              </button>
+
+              {task.date !== todayDate && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false)
+                    void onBringToToday(task)
+                  }}
+                  className="
+                    w-full
+                    px-4
+                    py-2.5
+                    text-left
+                    text-sm
+                    font-bold
+                    hover:bg-neutral-100
+                  "
+                >
+                  ↓ Today
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

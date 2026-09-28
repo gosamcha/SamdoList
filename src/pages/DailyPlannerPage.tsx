@@ -47,6 +47,16 @@ function parseStoredNumberArray(value?: string) {
   }
 }
 
+function getTodayDateString() {
+  const now = new Date()
+
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+
+  return `${year}-${month}-${day}`
+}
+
 function getCurrentFiveMinuteTime() {
   const now = new Date()
   const totalMinutes = now.getHours() * 60 + now.getMinutes()
@@ -456,6 +466,36 @@ function moveDate(amount: number) {
     })
   }
 
+  async function copyTaskToDate(
+    task: PlannerTask,
+    targetDate: string,
+  ) {
+    await db.tasks.add({
+      date: targetDate,
+      categoryId: task.categoryId,
+      title: task.title,
+      startTime: task.startTime,
+      endTime: task.endTime,
+      memo: task.memo,
+      status: 'todo',
+      createdAt: Date.now(),
+    })
+  }
+
+  async function moveTaskToTomorrow(task: PlannerTask) {
+    const tomorrow = addDays(task.date, 1)
+
+    await copyTaskToDate(task, tomorrow)
+  }
+
+  async function bringTaskToToday(task: PlannerTask) {
+    const today = getTodayDateString()
+
+    if (task.date === today) return
+
+    await copyTaskToDate(task, today)
+  }
+
 
   function compareTasksByManualOrder(
     a: PlannerTask,
@@ -701,20 +741,9 @@ function moveDate(amount: number) {
   }
 
   // 템플릿 불러오기
+  // 템플릿 적용
+  // 기존 데이터는 유지하고 템플릿 내용을 추가함
   async function applyDayTemplate(template: DayTemplate) {
-    const hasCurrentData =
-      tasks.length > 0 ||
-      Boolean(currentRecord?.wakeTime) ||
-      Boolean(currentRecord?.sleepTime)
-
-    if (hasCurrentData) {
-      const overwrite = window.confirm(
-        'Delete the current tasks and wake sleep times and apply this template',
-      )
-
-      if (!overwrite) return
-    }
-
     const categoriesById = new Map(
       categories.flatMap((category) =>
         category.id === undefined
@@ -732,65 +761,81 @@ function moveDate(amount: number) {
 
     let skippedTaskCount = 0
 
-    const newTasks = template.tasks.flatMap((templateTask, index) => {
-      const matchedCategory =
-        categoriesById.get(templateTask.categoryId) ??
-        categoriesByName.get(
-          templateTask.categoryName.trim().toLowerCase(),
-        )
+    const createdAtBase = Date.now()
 
-      if (matchedCategory?.id === undefined) {
-        skippedTaskCount += 1
-        return []
-      }
+    const newTasks = template.tasks.flatMap(
+      (templateTask, index) => {
+        const matchedCategory =
+          categoriesById.get(templateTask.categoryId) ??
+          categoriesByName.get(
+            templateTask.categoryName
+              .trim()
+              .toLowerCase(),
+          )
 
-      return [
-        {
-          date: selectedDate,
-          categoryId: matchedCategory.id,
-          order: templateTask.order ?? index,
-          title: templateTask.title,
-          startTime: templateTask.startTime,
-          endTime: templateTask.endTime,
-          memo: templateTask.memo ?? '',
-          status: 'todo' as const,
-          createdAt: Date.now() + index,
-        },
-      ]
-    })
+        if (matchedCategory?.id === undefined) {
+          skippedTaskCount += 1
+          return []
+        }
+
+        return [
+          {
+            date: selectedDate,
+            categoryId: matchedCategory.id,
+            title: templateTask.title,
+            startTime: templateTask.startTime,
+            endTime: templateTask.endTime,
+            memo: templateTask.memo ?? '',
+            status: 'todo' as const,
+            createdAt: createdAtBase + index,
+          },
+        ]
+      },
+    )
 
     await db.transaction(
       'rw',
       db.tasks,
       db.records,
       async () => {
-        await db.tasks
-          .where('date')
-          .equals(selectedDate)
-          .delete()
+        /*
+        * 기존 Todo는 절대 삭제하지 않음.
+        * 템플릿 Todo를 그냥 추가함.
+        */
+        if (newTasks.length > 0) {
+          await db.tasks.bulkAdd(newTasks)
+        }
 
+        /*
+        * wakeTime / sleepTime은 "추가"라는 개념이 없으므로
+        * 기존 값이 있으면 그대로 유지.
+        *
+        * 기존 값이 비어 있을 때만
+        * 템플릿 값을 가져옴.
+        */
         const previousRecord =
           await db.records.get(selectedDate)
 
         await db.records.put({
           ...previousRecord,
           date: selectedDate,
-          wakeTime: template.wakeTime ?? '',
-          sleepTime: template.sleepTime ?? '',
 
-          // DailyRecord에 memo가 있다면 주석을 제거
-          // memo: template.memo ?? '',
+          wakeTime:
+            previousRecord?.wakeTime ||
+            template.wakeTime ||
+            '',
+
+          sleepTime:
+            previousRecord?.sleepTime ||
+            template.sleepTime ||
+            '',
         })
-
-        if (newTasks.length > 0) {
-          await db.tasks.bulkAdd(newTasks)
-        }
       },
     )
 
     if (skippedTaskCount > 0) {
       alert(
-        `Applied the template but skipped ${skippedTaskCount} tasks whose categories do not exist`,
+        `Applied the template, but skipped ${skippedTaskCount} tasks whose categories do not exist`,
       )
     }
   }
@@ -1052,6 +1097,9 @@ function moveDate(amount: number) {
                 onEditTask={openEditTask}
                 onCycleStatus={cycleTaskStatus}
                 onMoveTask={moveTask}
+                todayDate={getTodayDateString()}
+                onMoveToTomorrow={moveTaskToTomorrow}
+                onBringToToday={bringTaskToToday}
               />
             )}
           </div>
