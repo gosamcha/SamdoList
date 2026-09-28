@@ -552,8 +552,12 @@ function CaptureView({
               onCreateTask={noopCreate}
               onEditTask={noopEdit}
               onCycleStatus={noopStatus}
+              todayDate={selectedDate}
+              onMoveToTomorrow={() => {}}
+              onBringToToday={() => {}}
               hiddenCategoryIds={hiddenCategoryIds}
               captureMode
+              
             />
           </div>
         </div>
