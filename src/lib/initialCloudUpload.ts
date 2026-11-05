@@ -35,7 +35,7 @@ export async function uploadExistingDataToCloud() {
   } = await supabase.auth.getUser()
 
   if (userError) throw userError
-  if (!user) throw new Error('로그인이 필요해.')
+  if (!user) throw new Error('Please sign in.')
 
   /*
    * 로컬 숫자 ID를 사용하는 데이터에 syncId 부여
@@ -250,7 +250,7 @@ export async function uploadExistingDataToCloud() {
   ]
 
   if (rows.length === 0) {
-    throw new Error('업로드할 로컬 데이터가 없어.')
+    throw new Error('No local records to upload.')
   }
 
   /*

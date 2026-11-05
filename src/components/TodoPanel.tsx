@@ -6,6 +6,8 @@ import {
   MouseSensor,
   TouchSensor,
   closestCenter,
+  pointerWithin,
+  type CollisionDetection,
   useDroppable,
   useSensor,
   useSensors,
@@ -44,6 +46,13 @@ type TodoPanelProps = {
   compact?: boolean
   onDeleteTask?: (task: PlannerTask) => void
   captureMode?: boolean
+}
+
+const todoCollision: CollisionDetection = args => {
+  // Category containers also surround their tasks. Prefer the row under the pointer.
+  const hits = pointerWithin(args)
+  const row = hits.find(hit => hit.data?.droppableContainer.data.current?.type === 'task')
+  return row ? [row] : hits.length ? hits : closestCenter(args)
 }
 
 function compareTasksByOrder(a: PlannerTask, b: PlannerTask) {
@@ -268,7 +277,7 @@ function TodoPanel({
                     strategy={verticalListSortingStrategy}
                   >
                     <div className={captureMode ? "divide-y divide-neutral-200" : undefined}>
-                      {categoryTasks.map((task) =>
+                      {categoryTasks.map((task, index) =>
                         task.id === undefined || captureMode || !onMoveTask ? (
                           <TodoItem
                             key={task.id ?? `task-${task.createdAt}`}
@@ -286,6 +295,14 @@ function TodoPanel({
                         ) : (
                           <SortableTodoItem
                             key={task.id}
+                            onStep={direction => {
+                              const target = categoryTasks[index + direction]
+                              if (target?.id !== undefined && task.id !== undefined) {
+                                void onMoveTask(task.id, task.categoryId, target.id)
+                              }
+                            }}
+                            canMoveUp={index > 0}
+                            canMoveDown={index < categoryTasks.length - 1}
                             task={task}
                             theme={theme}
                             onCycleStatus={onCycleStatus}
@@ -366,7 +383,7 @@ function TodoPanel({
   return (
     <DndContext
       sensors={sensors}
-      collisionDetection={closestCenter}
+      collisionDetection={todoCollision}
       onDragEnd={handleDragEnd}
     >
       {content}
@@ -419,6 +436,9 @@ type TodoItemProps = {
   compact?: boolean
   onDeleteTask?: (task: PlannerTask) => void
   captureMode?: boolean
+  onStep?: (direction: -1 | 1) => void
+  canMoveUp?: boolean
+  canMoveDown?: boolean
   dragProps?: ComponentPropsWithRef<"button">
 }
 
@@ -449,7 +469,8 @@ function SortableTodoItem(props: TodoItemProps) {
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
-        opacity: isDragging ? 0.45 : 1,
+        backgroundColor: isDragging ? "#f3f2fa" : undefined,
+        boxShadow: isDragging ? "0 3px 12px #302a471f" : undefined,
         position: 'relative',
         zIndex: isDragging ? 20 : undefined,
       }}
@@ -458,6 +479,7 @@ function SortableTodoItem(props: TodoItemProps) {
         ...attributes,
         ...listeners,
         ref: setActivatorNodeRef,
+        title: "Hold for 2 seconds, then drag to reorder",
         onContextMenu: event => event.preventDefault(),
       }} />
     </div>
@@ -476,6 +498,7 @@ function TodoItem({
   onDeleteTask,
   captureMode = false,
   dragProps,
+  onStep, canMoveUp, canMoveDown,
 }: TodoItemProps) {
   const [menuOpen, setMenuOpen] = useState(false)
 
@@ -495,7 +518,7 @@ function TodoItem({
 
       <button
         type="button"
-        aria-label={[task.title, task.status, "상태 변경"].join(" · ")}
+        aria-label={[task.title, task.status, "CHANGE STATUS"].join(" · ")}
         onClick={() => onCycleStatus(task)}
         className={clsx('todo-state', compact && 'is-compact', captureMode && 'is-capture')}
         style={{color: theme.statusDone}}
@@ -591,14 +614,22 @@ function TodoItem({
                   hover:bg-neutral-100
                 "
               >
-                → Tomorrow
+                → TOMORROW
               </button>
 
+              {onStep && ([-1, 1] as const).map(direction => (
+                <button key={direction} type="button"
+                  disabled={direction === -1 ? !canMoveUp : !canMoveDown}
+                  className="w-full px-4 py-2.5 text-left text-sm font-bold hover:bg-neutral-100 disabled:opacity-35"
+                  onClick={() => { setMenuOpen(false); onStep(direction) }}>
+                  {direction === -1 ? 'MOVE UP' : 'MOVE DOWN'}
+                </button>
+              ))}
               {onDeleteTask && (
                 <button type="button" className="w-full px-4 py-2.5 text-left text-sm font-bold text-red-600 hover:bg-red-50" onClick={() => {
                   setMenuOpen(false)
                   onDeleteTask(task)
-                }}>Delete</button>
+                }}>DELETE</button>
               )}
 
               {task.date !== todayDate && (
@@ -618,7 +649,7 @@ function TodoItem({
                     hover:bg-neutral-100
                   "
                 >
-                  ↓ Today
+                  ↓ TODAY
                 </button>
               )}
             </div>

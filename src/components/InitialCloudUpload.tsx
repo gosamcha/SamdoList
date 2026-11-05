@@ -7,7 +7,7 @@ export default function InitialCloudUpload() {
 
   const handleUpload = async () => {
     const confirmed = window.confirm(
-      '이 기기의 삼두리스트 데이터를 최초 클라우드 데이터로 업로드할까?',
+      'Upload this device’s SamdoList records to the cloud?',
     )
 
     if (!confirmed) return
@@ -19,7 +19,7 @@ export default function InitialCloudUpload() {
       const result = await uploadExistingDataToCloud()
 
       setMessage(
-        `완료: 총 ${result.total}개 항목을 클라우드에 저장했어.`,
+        `Uploaded ${result.total} items.`,
       )
     } catch (error) {
       console.error(error)
@@ -27,7 +27,7 @@ export default function InitialCloudUpload() {
       if (error instanceof Error) {
         setMessage(error.message)
       } else {
-        setMessage('업로드 중 오류가 발생했어.')
+        setMessage('Could not upload records.')
       }
     } finally {
       setLoading(false)
@@ -56,8 +56,8 @@ export default function InitialCloudUpload() {
         <h1>SamdoList Cloud Migration</h1>
 
         <p>
-          현재 기기에 저장된 SamdoList 데이터를 Supabase에 최초
-          업로드해.
+          Upload this device’s SamdoList records
+          to the cloud.
         </p>
 
         <button
@@ -65,7 +65,7 @@ export default function InitialCloudUpload() {
           disabled={loading}
           onClick={() => void handleUpload()}
         >
-          {loading ? 'Uploading...' : 'Upload Local Data'}
+          {loading ? 'Uploading...' : 'UPLOAD LOCAL DATA'}
         </button>
 
         {message && <p>{message}</p>}

@@ -83,7 +83,7 @@ export async function restoreCloudDataToLocal() {
   } = await supabase.auth.getUser()
 
   if (userError) throw userError
-  if (!user) throw new Error('로그인이 필요해.')
+  if (!user) throw new Error('Please sign in.')
 
   const { data, error } = await supabase
     .from('sync_items')
@@ -96,7 +96,7 @@ export async function restoreCloudDataToLocal() {
   const rows = (data ?? []) as CloudRow[]
 
   if (rows.length === 0) {
-    throw new Error('클라우드에 저장된 데이터가 없어.')
+    throw new Error('No cloud records found.')
   }
 
   const categories = rows.filter(

@@ -44,7 +44,7 @@ function TaskModal({
       >
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-xl font-black">
-            {draft.editingId ? 'Edit TO-DO' : 'Add TO-DO'}
+            {draft.editingId ? 'EDIT TO-DO' : 'ADD TO-DO'}
           </h2>
 
           <button

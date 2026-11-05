@@ -12,7 +12,7 @@ export default defineConfig({
       manifest: {
         name: 'SamdoList',
         short_name: 'SamdoList',
-        description: '개인용 시간관리 스터디 플래너',
+        description: 'Personal study and time planner',
         theme_color: '#ffffff',
         background_color: '#ffffff',
         display: 'standalone',

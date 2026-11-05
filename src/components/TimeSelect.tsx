@@ -24,19 +24,19 @@ export default function TimeSelect({ value, onChange, disabled, allowEmpty = tru
         setChoice((value || '00:00').split(':'))
         dialog.current?.showModal()
       }}>{value || (allowEmpty ? 'XX:XX' : '00:00')}</button>
-    {createPortal(<dialog className="time-dialog" ref={dialog} aria-label="시간 선택"
+    {createPortal(<dialog className="time-dialog" ref={dialog} aria-label="SELECT TIME"
       onClick={event => event.stopPropagation()}>
-      <div className="flex items-baseline justify-between"><h2>시간 선택</h2><strong>{choice.join(':')}</strong></div>
+      <div className="flex items-baseline justify-between"><h2>SELECT TIME</h2><strong>{choice.join(':')}</strong></div>
       {[hours, minutes].map((options, index) => <fieldset key={index}>
-        <legend>{index === 0 ? '시' : '분'}</legend>
+        <legend>{index === 0 ? 'HOUR' : 'MINUTE'}</legend>
         <div className="time-options">{options.map(option =>
           <button type="button" aria-pressed={choice[index] === option} key={option}
             onClick={() => setChoice(current => current.map((part, i) => i === index ? option : part))}>{option}</button>
         )}</div>
       </fieldset>)}
-      <footer>{allowEmpty && <button type="button" onClick={() => finish('')}>시간 지우기</button>}
-        <button type="button" onClick={() => dialog.current?.close()}>취소</button>
-        <button type="button" className="primary-action" onClick={() => finish(choice.join(':'))}>적용</button>
+      <footer>{allowEmpty && <button type="button" onClick={() => finish('')}>CLEAR TIME</button>}
+        <button type="button" onClick={() => dialog.current?.close()}>CANCEL</button>
+        <button type="button" className="primary-action" onClick={() => finish(choice.join(':'))}>APPLY</button>
       </footer>
     </dialog>, document.body)}
   </>

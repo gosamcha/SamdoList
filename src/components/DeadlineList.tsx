@@ -25,8 +25,8 @@ export default function DeadlineList({ userId, mobile, close }: {
   useEffect(() => { if (mobile && !dialog.current?.open) dialog.current?.showModal() }, [mobile])
   const today = formatDateLocal()
   const content = <>
-    <header><span className="deadline-dot" aria-hidden="true" /><h2 className="desk-heading">{mobile ? 'Deadline List' : 'Check List'}</h2><button type="button" aria-label="마감 일정 추가" aria-expanded={adding} onClick={() => setAdding(!adding)}><Plus size={17}/></button>
-      {mobile && <button type="button" onClick={close} aria-label="닫기"><X size={18} /></button>}
+    <header><span className="deadline-dot" aria-hidden="true" /><h2 className="desk-heading">{mobile ? 'Deadline List' : 'Check List'}</h2><button type="button" aria-label="ADD DEADLINE" aria-expanded={adding} onClick={() => setAdding(!adding)}><Plus size={17}/></button>
+      {mobile && <button type="button" onClick={close} aria-label="CLOSE"><X size={18} /></button>}
     </header>
     {adding && <form onSubmit={async event => {
       event.preventDefault()
@@ -38,13 +38,13 @@ export default function DeadlineList({ userId, mobile, close }: {
         setAdding(false)
       } finally { setSaving(false) }
     }}>
-      <input autoFocus required maxLength={200} aria-label="할 일" placeholder="마감이 있는 할 일" value={title} onChange={e => setTitle(e.target.value)} />
-      <div className="flex gap-2"><input type="date" required aria-label="마감일" value={due} onChange={e => setDue(e.target.value)} />
-        <button className="primary-action" disabled={saving || !title.trim()}>추가</button></div>
+      <input autoFocus required maxLength={200} aria-label="Task" placeholder="Task with a deadline" value={title} onChange={e => setTitle(e.target.value)} />
+      <div className="flex gap-2"><input type="date" required aria-label="Due date" value={due} onChange={e => setDue(e.target.value)} />
+        <button className="primary-action" disabled={saving || !title.trim()}>ADD</button></div>
     </form>}
-    {items?.length === 0 && <p className="text-sm text-neutral-500">등록한 마감 일정이 없어요.</p>}
+    {items?.length === 0 && <p className="text-sm text-neutral-500">No deadlines yet.</p>}
     <ul>{items?.map(item => <li key={item.key}>
-      <button type="button" className="deadline-toggle" aria-label={item.title + ' 완료'} aria-pressed={item.done}
+      <button type="button" className="deadline-toggle" aria-label={'MARK COMPLETE: ' + item.title} aria-pressed={item.done}
         onClick={() => db.transaction('rw', db.settings, async () => {
           const row = await db.settings.get(item.key)
           if (!row) return
@@ -53,8 +53,8 @@ export default function DeadlineList({ userId, mobile, close }: {
         })}>{item.done && <Check size={14}/>}</button>
       <div className="min-w-0 flex-1"><span className={item.done ? 'line-through text-neutral-400' : ''}>{item.title}</span>
         <time className={!item.done && item.due < today ? 'text-rose-700' : 'text-neutral-500'}>{item.due}</time></div>
-      <button type="button" aria-label={item.title + ' 삭제'} onClick={() => {
-        if (window.confirm(item.title + ' 항목을 삭제할까요?')) void db.settings.delete(item.key)
+      <button type="button" aria-label={'DELETE: ' + item.title} onClick={() => {
+        if (window.confirm('Delete “' + item.title + '”?')) void db.settings.delete(item.key)
       }}><Trash2 size={15}/></button>
     </li>)}</ul>
   </>

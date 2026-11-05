@@ -210,3 +210,27 @@ button {
 @media(min-width:1650px) {
   .todo-category-flow { column-gap:clamp(28px,2.7vw,52px); }
 }
+
+@media (width < 1200px) {
+  .planner-todos .todo-state {
+    width:36px;
+    height:36px;
+  }
+  .planner-todos .todo-state.is-compact { margin-inline-end:8px; }
+  .planner-todos .todo-state span {
+    display:grid;
+    place-items:center;
+    width:36px;
+    height:36px;
+    border:2px solid currentColor;
+    border-radius:12px;
+    background:transparent;
+    font-size:14px;
+    font-weight:800;
+    line-height:1;
+  }
+  .planner-todos .todo-state [data-status=done]::after { content:"O"; }
+  .planner-todos .todo-state [data-status=partial]::after { content:"△"; }
+  .planner-todos .todo-state [data-status=todo] { color:#a3a3a3; }
+  .planner-todos .todo-title > div:first-child { font-size:14px; }
+}

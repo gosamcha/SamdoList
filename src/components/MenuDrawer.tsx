@@ -502,7 +502,7 @@ function MenuDrawer({
               color: theme.primaryText,
             }}
           >
-            Add Category
+            ADD CATEGORY
           </button>
 
           <div className="space-y-3">

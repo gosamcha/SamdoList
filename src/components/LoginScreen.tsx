@@ -9,7 +9,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!email || !password) {
-      setErrorMessage('이메일과 비밀번호를 입력해줘.')
+      setErrorMessage('Enter your email and password.')
       return
     }
 
@@ -37,6 +37,6 @@ export default function LoginScreen() {
     <label>Email<input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} /></label>
     <label>Password<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /></label>
     {errorMessage && <p role="alert">{errorMessage}</p>}
-    <button className="primary-action" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
+    <button className="primary-action" disabled={loading}>{loading ? 'Signing in…' : 'SIGN IN'}</button>
   </form></main>
 }

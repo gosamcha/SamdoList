@@ -20,7 +20,7 @@ function Loading({ done, total, label }: { done?: number; total?: number; label:
   return <main className="entry-screen"><section className="entry-card" aria-live="polite"><img src="/favicon.png" alt="" className="entry-icon" /><h1>SamdoList</h1>
     <p>{label}</p>
     <progress aria-label={label} value={done} max={total} className="my-3 w-full accent-indigo-500" />
-    <p className="text-sm text-neutral-500">{total ? done + ' / ' + total + ' 단계 · ' : ''}{seconds}초 경과</p>
+    <p className="text-sm text-neutral-500">{total ? done + ' / ' + total + ' steps · ' : ''}{seconds}s elapsed</p>
   </section></main>
 }
 
@@ -70,18 +70,18 @@ function Planner({ userId }: { userId: string }) {
   }, [sync, week, retry, offline])
 
   if (error && !offline) return <main className="entry-screen"><section className="entry-card"><img src="/favicon.png" alt="" className="entry-icon" /><h1>SamdoList</h1>
-    <p>클라우드 기록을 불러오지 못했어요.</p>
-    <button onClick={() => { setError(false); setRetry(n => n + 1) }}>다시 시도</button>
+    <p>Could not load your cloud records.</p>
+    <button onClick={() => { setError(false); setRetry(n => n + 1) }}>RETRY</button>
     <button className="ml-4" onClick={async () => {
       if (!date) setDate(getPlannerDate(new Date(), (await db.settings.get('dayStart'))?.value))
       setOffline(true)
-    }}>기기에 저장된 기록 열기</button>
+    }}>OPEN LOCAL RECORDS</button>
   </section></main>
   if (!offline && (!readyWeek || !covered.current.has(week))) {
-    return <Loading {...progress} label={progress.total && progress.done === progress.total - 1 ? '기기에 저장하는 중' : '플래너 기록 불러오는 중'} />
+    return <Loading {...progress} label={progress.total && progress.done === progress.total - 1 ? 'Saving to this device' : 'Loading planner records'} />
   }
   const navigate = (next: string) => { if (next) setDate(next) }
-  if (page === 'weekly') return <Suspense fallback={<Loading label="주간 화면 여는 중" />}>
+  if (page === 'weekly') return <Suspense fallback={<Loading label="Opening weekly summary" />}>
     <WeeklySummaryPage selectedDate={date} onSelectedDateChange={navigate} onOpenDaily={() => setPage('daily')} />
   </Suspense>
   return <DailyPlannerPage userId={userId} selectedDate={date} onSelectedDateChange={navigate} onOpenWeekly={() => setPage('weekly')} />
@@ -93,6 +93,6 @@ export default function App() {
     const { data } = supabase.auth.onAuthStateChange((_event, value) => setSession(value))
     return () => data.subscription.unsubscribe()
   }, [])
-  if (session === undefined) return <Loading label="로그인 확인 중" />
+  if (session === undefined) return <Loading label="Checking sign-in" />
   return session ? <Planner key={session.user.id} userId={session.user.id} /> : <LoginScreen />
 }
