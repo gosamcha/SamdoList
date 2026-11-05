@@ -17,11 +17,11 @@ function Loading({ done, total, label }: { done?: number; total?: number; label:
     const timer = window.setInterval(() => setSeconds(Math.floor((performance.now() - start) / 1000)), 500)
     return () => clearInterval(timer)
   }, [])
-  return <main className="mx-auto mt-[30vh] max-w-sm px-6">
-    <h1 className="text-lg font-bold">{label}</h1>
+  return <main className="entry-screen"><section className="entry-card" aria-live="polite"><img src="/favicon.png" alt="" className="entry-icon" /><h1>SamdoList</h1>
+    <p>{label}</p>
     <progress aria-label={label} value={done} max={total} className="my-3 w-full accent-indigo-500" />
     <p className="text-sm text-neutral-500">{total ? done + ' / ' + total + ' 단계 · ' : ''}{seconds}초 경과</p>
-  </main>
+  </section></main>
 }
 
 function Planner({ userId }: { userId: string }) {
@@ -69,14 +69,14 @@ function Planner({ userId }: { userId: string }) {
     return () => { active = false }
   }, [sync, week, retry, offline])
 
-  if (error && !offline) return <main className="mx-auto mt-[30vh] max-w-sm space-y-4 px-6">
+  if (error && !offline) return <main className="entry-screen"><section className="entry-card"><img src="/favicon.png" alt="" className="entry-icon" /><h1>SamdoList</h1>
     <p>클라우드 기록을 불러오지 못했어요.</p>
     <button onClick={() => { setError(false); setRetry(n => n + 1) }}>다시 시도</button>
     <button className="ml-4" onClick={async () => {
       if (!date) setDate(getPlannerDate(new Date(), (await db.settings.get('dayStart'))?.value))
       setOffline(true)
     }}>기기에 저장된 기록 열기</button>
-  </main>
+  </section></main>
   if (!offline && (!readyWeek || !covered.current.has(week))) {
     return <Loading {...progress} label={progress.total && progress.done === progress.total - 1 ? '기기에 저장하는 중' : '플래너 기록 불러오는 중'} />
   }
@@ -84,7 +84,7 @@ function Planner({ userId }: { userId: string }) {
   if (page === 'weekly') return <Suspense fallback={<Loading label="주간 화면 여는 중" />}>
     <WeeklySummaryPage selectedDate={date} onSelectedDateChange={navigate} onOpenDaily={() => setPage('daily')} />
   </Suspense>
-  return <DailyPlannerPage selectedDate={date} onSelectedDateChange={navigate} onOpenWeekly={() => setPage('weekly')} />
+  return <DailyPlannerPage userId={userId} selectedDate={date} onSelectedDateChange={navigate} onOpenWeekly={() => setPage('weekly')} />
 }
 
 export default function App() {

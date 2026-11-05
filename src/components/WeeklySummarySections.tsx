@@ -337,13 +337,13 @@ export function MoodTracker({
       }}
     >
       <div
-        className="font-black leading-none"
+        className="desk-heading font-black leading-none"
         style={{ fontSize: captureMode ? 28 : 17 }}
       >
         Mood Tracker
       </div>
 
-      <div
+      <div className="mood-chart"
         style={{
           display: 'grid',
           gridTemplateColumns: `${labelColumnWidth}px minmax(0, 1fr)`,
@@ -364,7 +364,7 @@ export function MoodTracker({
           {resolvedLabels.map((label) => (
             <div
               key={label}
-              className={`flex min-w-0 items-center justify-end font-black text-neutral-500 ${
+              className={`mood-axis-label flex min-w-0 items-center justify-end font-black text-neutral-500 ${
                 captureMode ? 'pr-4' : 'pr-2'
               }`}
               style={{ fontSize: captureMode ? 21 : 10 }}
@@ -381,7 +381,7 @@ export function MoodTracker({
             minHeight: 0,
           }}
         >
-          <div className="relative min-h-0">
+          <div className="mood-plot relative min-h-0">
             <svg
               viewBox="0 0 100 100"
               preserveAspectRatio="none"
@@ -413,7 +413,7 @@ export function MoodTracker({
                     height: dotSize,
                     borderRadius: '9999px',
                     boxSizing: 'border-box',
-                    backgroundColor: '#ffffff',
+                    backgroundColor: theme.primaryBg,
                     borderStyle: 'solid',
                     borderColor: theme.primaryBg,
                     borderWidth: lineWidth,
@@ -528,7 +528,7 @@ export function HabitTracker({
       }}
     >
       <div
-        className="font-black leading-none"
+        className="desk-heading font-black leading-none"
         style={{ fontSize: captureMode ? 28 : 17 }}
       >
         Habit Tracker

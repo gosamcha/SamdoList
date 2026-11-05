@@ -1,3 +1,4 @@
+import { useWeekTrackers } from '../components/useWeekTrackers'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   CalendarDays,
@@ -9,11 +10,7 @@ import {
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db, seedInitialData } from '../db'
 import type {
-  HabitDefinition,
-  HabitStatus,
-  MoodLevel,
   PlannerTask,
-  WeeklyRecord,
 } from '../types'
 import type { ThemeColors } from '../plannerTypes'
 import {
@@ -21,8 +18,6 @@ import {
   CAPTURE_TIME_LABELS_KEY,
   CATEGORY_ORDER_KEY,
   DEFAULT_THEME,
-  DEFAULT_WEEKLY_MOOD_LABELS,
-  DEFAULT_WEEKLY_MOOD_LEVEL,
   MAX_WEEKLY_HABITS,
   THEME_SETTING_KEYS,
   WEEKLY_HABITS_KEY,
@@ -54,12 +49,6 @@ type WeeklySummaryPageProps = {
   onOpenDaily: () => void
 }
 
-const nextHabitStatus: Record<HabitStatus, HabitStatus> = {
-  todo: 'done',
-  done: 'partial',
-  partial: 'todo',
-}
-
 function parseStoredNumberArray(value?: string) {
   try {
     const parsed = JSON.parse(value ?? '[]')
@@ -70,71 +59,6 @@ function parseStoredNumberArray(value?: string) {
   } catch {
     return []
   }
-}
-
-function parseMoodLabels(value?: string) {
-  try {
-    const parsed = JSON.parse(value ?? '[]')
-
-    if (!Array.isArray(parsed)) return [...DEFAULT_WEEKLY_MOOD_LABELS]
-
-    return Array.from({ length: 4 }, (_, index) =>
-      typeof parsed[index] === 'string'
-        ? parsed[index].slice(0, 20)
-        : DEFAULT_WEEKLY_MOOD_LABELS[index],
-    )
-  } catch {
-    return [...DEFAULT_WEEKLY_MOOD_LABELS]
-  }
-}
-
-function parseHabits(value?: string) {
-  try {
-    const parsed = JSON.parse(value ?? '[]')
-
-    if (!Array.isArray(parsed)) return []
-
-    return parsed
-      .filter(
-        (item): item is HabitDefinition =>
-          typeof item === 'object' &&
-          item !== null &&
-          typeof item.id === 'string' &&
-          typeof item.name === 'string',
-      )
-      .slice(0, MAX_WEEKLY_HABITS)
-      .map((item) => ({
-        id: item.id,
-        name: item.name.slice(0, 30),
-      }))
-  } catch {
-    return []
-  }
-}
-
-function normalizeMoods(values?: MoodLevel[]) {
-  return Array.from({ length: 7 }, (_, index) => {
-    const value = values?.[index]
-
-    return value === 0 || value === 1 || value === 2 || value === 3
-      ? value
-      : DEFAULT_WEEKLY_MOOD_LEVEL
-  }) as MoodLevel[]
-}
-
-function normalizeHabitStatuses(
-  habits: HabitDefinition[],
-  stored?: Record<string, HabitStatus[]>,
-) {
-  return Object.fromEntries(
-    habits.map((habit) => [
-      habit.id,
-      Array.from({ length: 7 }, (_, index) => {
-        const status = stored?.[habit.id]?.[index]
-        return status === 'done' || status === 'partial' ? status : 'todo'
-      }),
-    ]),
-  ) as Record<string, HabitStatus[]>
 }
 
 function getCompletionRate(tasks: PlannerTask[]) {
@@ -259,24 +183,7 @@ function WeeklySummaryPage({
       hiddenCategoryIds: [],
     }
 
-  const moodLabels =
-    useLiveQuery(async () => {
-      const setting = await db.settings.get(WEEKLY_MOOD_LABELS_KEY)
-      return parseMoodLabels(setting?.value)
-    }, []) ?? [...DEFAULT_WEEKLY_MOOD_LABELS]
-
-  const habits =
-    useLiveQuery(async () => {
-      const setting = await db.settings.get(WEEKLY_HABITS_KEY)
-      return parseHabits(setting?.value)
-    }, []) ?? []
-
-  const weeklyRecord = useLiveQuery(
-    () => db.weeklyRecords.get(weekStart),
-    [weekStart],
-  )
-  const currentWeeklyRecord =
-    weeklyRecord?.weekStart === weekStart ? weeklyRecord : undefined
+  const { moodLabels, habits, currentWeeklyRecord, moods, habitStatuses, changeMood, cycleHabitStatus, updateWeek } = useWeekTrackers(weekStart)
 
   const tasks =
     useLiveQuery(
@@ -359,28 +266,8 @@ function WeeklySummaryPage({
     })
   }, [dailyRecords, dayStart, weekDates])
 
-  const moods = useMemo(
-    () => normalizeMoods(currentWeeklyRecord?.moods),
-    [currentWeeklyRecord?.moods],
-  )
-
-  const habitStatuses = useMemo(
-    () => normalizeHabitStatuses(habits, currentWeeklyRecord?.habitStatuses),
-    [currentWeeklyRecord?.habitStatuses, habits],
-  )
-
   function moveWeek(amount: number) {
     onSelectedDateChange(addDays(selectedDate, amount * 7))
-  }
-
-  async function updateWeeklyRecord(patch: Partial<WeeklyRecord>) {
-    const previous = await db.weeklyRecords.get(weekStart)
-
-    await db.weeklyRecords.put({
-      ...previous,
-      weekStart,
-      ...patch,
-    })
   }
 
   function changeWeeklyMemo(value: string) {
@@ -389,23 +276,7 @@ function WeeklySummaryPage({
   }
 
   async function saveWeeklyMemo() {
-    await updateWeeklyRecord({ memo: weeklyMemo })
-  }
-
-  function changeMood(dayIndex: number, mood: MoodLevel) {
-    const nextMoods = [...moods]
-    nextMoods[dayIndex] = mood
-    void updateWeeklyRecord({ moods: nextMoods })
-  }
-
-  function cycleHabitStatus(habitId: string, dayIndex: number) {
-    const nextStatuses = {
-      ...habitStatuses,
-      [habitId]: [...(habitStatuses[habitId] ?? Array<HabitStatus>(7).fill('todo'))],
-    }
-    const currentStatus = nextStatuses[habitId][dayIndex] ?? 'todo'
-    nextStatuses[habitId][dayIndex] = nextHabitStatus[currentStatus]
-    void updateWeeklyRecord({ habitStatuses: nextStatuses })
+    await updateWeek(() => ({ memo: weeklyMemo }))
   }
 
   async function updateMoodLabel(index: number, value: string) {

@@ -1,9 +1,10 @@
-import { useMemo, type ReactNode, useState } from 'react'
-import { ChevronDown, GripVertical } from 'lucide-react'
+import { useMemo, type ReactNode, type ComponentPropsWithRef, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import clsx from 'clsx'
 import {
   DndContext,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   closestCenter,
   useDroppable,
   useSensor,
@@ -86,11 +87,8 @@ function TodoPanel({
   void dayStart
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 6,
-      },
-    }),
+    useSensor(MouseSensor, { activationConstraint: { delay: 2000, tolerance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 2000, tolerance: 8 } }),
   )
 
   const foldedCategoryIdSet = useMemo(
@@ -170,6 +168,7 @@ function TodoPanel({
     <section
       className={clsx(
         'overflow-hidden border border-neutral-200 bg-white',
+        !captureMode && 'planner-todos',
         captureMode ? 'h-full rounded-[30px]' : 'rounded-2xl',
       )}
     >
@@ -186,6 +185,7 @@ function TodoPanel({
           </div>
         )}
 
+        <div className={captureMode ? undefined : "todo-category-flow"}>
         {grouped.map(({ category, tasks: categoryTasks }) => {
           const categoryId = category.id
           const isFolded =
@@ -221,7 +221,7 @@ function TodoPanel({
 
                   <span
                     className={clsx(
-                      'force-bold-text truncate font-black',
+                      'desk-heading force-bold-text truncate font-black',
                       captureMode ? 'text-[25px]' : 'text-base',
                     )}
                   >
@@ -267,9 +267,9 @@ function TodoPanel({
                     )}
                     strategy={verticalListSortingStrategy}
                   >
-                    <div className="divide-y divide-neutral-200">
+                    <div className={captureMode ? "divide-y divide-neutral-200" : undefined}>
                       {categoryTasks.map((task) =>
-                        task.id === undefined || compact ? (
+                        task.id === undefined || captureMode || !onMoveTask ? (
                           <TodoItem
                             key={task.id ?? `task-${task.createdAt}`}
                             task={task}
@@ -335,7 +335,7 @@ function TodoPanel({
               Deleted Category
             </h3>
 
-            <div className="divide-y divide-neutral-200">
+            <div className={captureMode ? "divide-y divide-neutral-200" : undefined}>
               {uncategorized.map((task) => (
                 <TodoItem
                   key={task.id ?? task.createdAt}
@@ -354,6 +354,7 @@ function TodoPanel({
             </div>
           </div>
         )}
+        </div>
       </div>
     </section>
   )
@@ -418,7 +419,7 @@ type TodoItemProps = {
   compact?: boolean
   onDeleteTask?: (task: PlannerTask) => void
   captureMode?: boolean
-  dragHandle?: ReactNode
+  dragProps?: ComponentPropsWithRef<"button">
 }
 
 function SortableTodoItem(props: TodoItemProps) {
@@ -442,20 +443,6 @@ function SortableTodoItem(props: TodoItemProps) {
     },
   })
 
-  const dragHandle = props.captureMode ? undefined : (
-    <button
-      ref={setActivatorNodeRef}
-      type="button"
-      {...attributes}
-      {...listeners}
-      className="grid h-9 w-6 shrink-0 touch-none place-items-center text-neutral-300 hover:text-neutral-500 active:text-neutral-600"
-      aria-label="Move todo"
-      onClick={(event) => event.stopPropagation()}
-    >
-      <GripVertical size={17} strokeWidth={2.5} />
-    </button>
-  )
-
   return (
     <div
       ref={setNodeRef}
@@ -467,7 +454,12 @@ function SortableTodoItem(props: TodoItemProps) {
         zIndex: isDragging ? 20 : undefined,
       }}
     >
-      <TodoItem {...props} dragHandle={dragHandle} />
+      <TodoItem {...props} dragProps={{
+        ...attributes,
+        ...listeners,
+        ref: setActivatorNodeRef,
+        onContextMenu: event => event.preventDefault(),
+      }} />
     </div>
   )
 }
@@ -483,23 +475,9 @@ function TodoItem({
   compact = false,
   onDeleteTask,
   captureMode = false,
-  dragHandle,
+  dragProps,
 }: TodoItemProps) {
   const [menuOpen, setMenuOpen] = useState(false)
-
-  const statusText =
-    task.status === 'done'
-      ? 'O'
-      : task.status === 'partial'
-        ? '△'
-        : compact ? 'X' : ''
-
-  const statusColor =
-    task.status === 'done'
-      ? theme.statusDone
-      : task.status === 'partial'
-        ? theme.statusPartial
-        : theme.statusTodo
 
   const timeText = task.startTime
     ? task.endTime
@@ -511,34 +489,26 @@ function TodoItem({
     <div
       className={clsx(
         'relative flex flex-wrap items-center',
-        captureMode ? 'gap-3 py-2.5' : 'gap-2 py-2',
+        captureMode ? 'gap-3 py-2.5' : compact ? 'gap-0' : 'gap-2 py-2',
       )}
     >
-      {!captureMode && dragHandle}
 
       <button
         type="button"
         aria-label={[task.title, task.status, "상태 변경"].join(" · ")}
         onClick={() => onCycleStatus(task)}
-        className={clsx(
-          'grid shrink-0 place-items-center font-extrabold',
-          captureMode
-            ? 'h-[46px] w-[46px] rounded-[15px] border-[3px] text-[19px]'
-            : 'h-9 w-9 rounded-xl border-2 text-sm',
-        )}
-        style={{
-          borderColor: statusColor,
-          color: statusColor,
-        }}
+        className={clsx('todo-state', compact && 'is-compact', captureMode && 'is-capture')}
+        style={{color: theme.statusDone}}
       >
-        {statusText}
+        <span data-status={task.status} aria-hidden="true" />
       </button>
 
       <button
         type="button"
+        {...dragProps}
         onClick={() => onEditTask(task)}
         className={clsx(
-          'min-w-0 flex-1 rounded-xl text-left hover:bg-neutral-100',
+          'todo-title min-w-0 flex-1 rounded-xl text-left hover:bg-neutral-100',
           captureMode ? 'px-2 py-1.5' : compact ? 'py-1' : 'px-2 py-1',
         )}
       >

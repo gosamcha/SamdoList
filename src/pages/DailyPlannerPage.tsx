@@ -1,5 +1,6 @@
+import DailyTrackers from '../components/DailyTrackers'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarRange, ChevronLeft, ChevronRight, ImageDown, Menu } from 'lucide-react'
+import { ListChecks, CalendarRange, ChevronLeft, ChevronRight, ImageDown, Menu } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import clsx from 'clsx'
 import { db, seedInitialData } from '../db'
@@ -12,6 +13,8 @@ import type {
 } from '../types'
 import {
   addDays,
+  localDateAt,
+  sleepStartDateTime,
   minutesToTimeLabel,
   timeToMinutes,
 } from '../utils/time'
@@ -32,6 +35,7 @@ import CaptureView, {
 import MenuDrawer from '../components/MenuDrawer'
 import TaskModal from '../components/TaskModal'
 import TimePanel from '../components/TimePanel'
+import DeadlineList from '../components/DeadlineList'
 import TimeSelect from '../components/TimeSelect'
 import TodoPanel from '../components/TodoPanel'
 
@@ -77,12 +81,14 @@ const nextStatus: Record<TaskStatus, TaskStatus> = {
 }
 
 type DailyPlannerPageProps = {
+  userId: string
   selectedDate: string
   onSelectedDateChange: (date: string) => void
   onOpenWeekly: () => void
 }
 
 function DailyPlannerPage({
+  userId,
   selectedDate,
   onSelectedDateChange,
   onOpenWeekly,
@@ -854,19 +860,22 @@ function moveDate(amount: number) {
     await db.dayTemplates.delete(templateId)
   }
 
+  const [desktop, setDesktop] = useState(() => matchMedia('(min-width: 1200px)').matches)
+  const [deadlinesOpen, setDeadlinesOpen] = useState(false)
+  useEffect(() => {
+    const media = matchMedia('(min-width: 1200px)')
+    const resize = () => { setDesktop(media.matches); setDeadlinesOpen(false) }
+    media.addEventListener('change', resize)
+    return () => media.removeEventListener('change', resize)
+  }, [])
+  const sleepMinutes = records.prev?.sleepTime && currentRecord?.wakeTime
+    ? Math.round((localDateAt(selectedDate, currentRecord.wakeTime).getTime() -
+      sleepStartDateTime(addDays(selectedDate, -1), records.prev.sleepTime, dayStart).getTime()) / 60000)
+    : 0
   const visibleTabCount = Number(showTimeTab) + Number(showTodoTab)
 
-  return (
-    <main className="samdolist-app min-h-screen bg-neutral-100">
-      <style>{`
-        .samdolist-app button,
-        .samdolist-app .force-bold-text {
-          font-weight: 900 !important;
-          -webkit-text-stroke: 0.22px currentColor;
-        }
-      `}</style>
-      <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/95 px-3 py-3 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-2">
+  const navigation = (
+        <div className="planner-header mx-auto flex max-w-6xl items-center gap-2">
           <div className="flex min-w-0 flex-1 items-center gap-1">
             {/* 전날 이동 */}
             <button
@@ -918,6 +927,8 @@ function moveDate(amount: number) {
             </button>
           </div>
 
+          {!desktop && <button type="button" onClick={() => setDeadlinesOpen(true)} aria-label="Open deadline list"
+            className="rounded-xl border border-neutral-200 p-2"><ListChecks size={22}/></button>}
           <button
             type="button"
             onClick={onOpenWeekly}
@@ -946,13 +957,25 @@ function moveDate(amount: number) {
             <Menu size={22} />
           </button>
         </div>
-      </header>
+  )
 
-      <section className="mx-auto max-w-6xl px-3 py-3">
-        <div className="rounded-3xl border border-neutral-200 bg-white p-3">
+  return (
+    <main className="samdolist-app min-h-screen bg-neutral-100">
+      <style>{`
+        @media (max-width:1199px) { .samdolist-app button,
+        .samdolist-app .force-bold-text {
+          font-weight: 900 !important;
+          -webkit-text-stroke: 0.22px currentColor; }
+        }
+      `}</style>
+      {!desktop && <header className="sticky top-0 z-20 border-b border-neutral-200 bg-white/95 px-3 py-3 backdrop-blur">{navigation}</header>}
+
+      <section className="planner-layout mx-auto max-w-6xl px-3 py-3"><aside className="planner-sidebar">
+        {desktop && navigation}
+        <div className="day-profile rounded-3xl border border-neutral-200 bg-white p-3">
           <div className="flex gap-3">
             {/* 왼쪽 이미지 영역 */}
-            <div className="shrink-0">
+            {!desktop && <div className="shrink-0">
               <label className="grid h-24 w-24 cursor-pointer place-items-center overflow-hidden rounded-2xl border border-white bg-white text-center text-xs font-bold text-neutral-400">
                 {profileImage ? (
                   <img
@@ -978,13 +1001,13 @@ function moveDate(amount: number) {
                   }}
                 />
               </label>
-            </div>
+            </div>}
 
             {/* 오른쪽 정보 영역 */}
             <div className="min-w-0 flex-1">
               <div className="mb-3">
                 <div className="mb-1 flex items-center justify-between text-sm">
-                  <span className="font-black">Progress Bar</span>
+                  <span className="desk-heading font-black">{desktop ? 'Progress' : 'Progress Bar'}</span>
                   <span className="text-lg font-black">{completionRate}%</span>
                 </div>
 
@@ -999,7 +1022,7 @@ function moveDate(amount: number) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="sleep-times grid grid-cols-2 gap-2">
                 <label className="text-sm font-black">
                   Wake-Up
                   <TimeSelect
@@ -1023,12 +1046,17 @@ function moveDate(amount: number) {
                     }
                   />
                 </label>
+                {desktop && <p className="sleep-summary"><span>Sleep duration</span><strong>{sleepMinutes > 0 ? Math.floor(sleepMinutes / 60) + 'h ' + sleepMinutes % 60 + 'm' : '—'}</strong></p>}
               </div>
             </div>
           </div>
         </div>
 
-        <div className="mt-3 flex gap-2">
+        {desktop && <>
+          <DeadlineList userId={userId} mobile={false} close={() => {}} /></>}
+        </aside>
+        <div className="planner-center">
+        {!desktop && <div className="mt-3 flex gap-2">
           <button
             type="button"
             onClick={() => setShowTimeTab((prev) => !prev)}
@@ -1068,18 +1096,19 @@ function moveDate(amount: number) {
           >
             TODO TAB
           </button>
-        </div>
+        </div>}
 
         {/* 하나 이상의 탭이 켜져 있을 때만 탭 내용을 표시함 */}
-        {visibleTabCount > 0 && (
+        {(desktop || visibleTabCount > 0) && (
           <div
             className={clsx(
-              'mt-3 grid gap-3',
+              'planner-panels mt-3 grid gap-3',
               visibleTabCount === 2 ? 'grid-cols-2 md:grid-cols-[3fr_2fr]' : 'grid-cols-1',
             )}
           >
-            {showTimeTab && (
+            {(desktop || showTimeTab) && (
               <TimePanel
+                hourHeight={desktop ? 36.5 : undefined}
                 selectedDate={selectedDate}
                 dayStart={dayStart}
                 categories={categories}
@@ -1089,9 +1118,9 @@ function moveDate(amount: number) {
               />
             )}
 
-            {showTodoTab && (
+            {(desktop || showTodoTab) && (
               <TodoPanel
-                compact={showTimeTab}
+                compact={!desktop && showTimeTab}
                 onDeleteTask={async (task) => {
                   if (task.id && window.confirm("Delete “" + task.title + "”?")) await db.tasks.delete(task.id)
                 }}
@@ -1113,8 +1142,9 @@ function moveDate(amount: number) {
           </div>
         )}
 
+        </div>
         {/* 날짜 별 하루 메모 */}
-        <div className="mt-3 rounded-3xl border border-neutral-200 bg-white p-4">
+        <div className="planner-memo mt-3 rounded-3xl border border-neutral-200 bg-white p-4">
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
               {/* 테마 색상 포인트 */}
@@ -1125,7 +1155,7 @@ function moveDate(amount: number) {
                 }}
               />
 
-              <span className="text-sm font-black">
+              <span className="desk-heading text-sm font-black">
                 Daily Memo
               </span>
             </div>
@@ -1165,9 +1195,11 @@ function moveDate(amount: number) {
               sm:text-sm
             "
           />
+          {desktop && <DailyTrackers date={selectedDate} theme={theme} />}
         </div>
       </section>
 
+      {!desktop && deadlinesOpen && <DeadlineList userId={userId} mobile close={() => setDeadlinesOpen(false)} />}
       {menuOpen && (
         <MenuDrawer
           dayStart={dayStart}

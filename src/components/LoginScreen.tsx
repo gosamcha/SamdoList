@@ -28,65 +28,15 @@ export default function LoginScreen() {
     setLoading(false)
   }
 
-  return (
-    <div
-      style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: '24px',
-      }}
-    >
-      <div
-        style={{
-          width: '100%',
-          maxWidth: '360px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '12px',
-        }}
-      >
-        <h1>SamdoList</h1>
-
-        <input
-          type="email"
-          placeholder="Email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              void handleLogin()
-            }
-          }}
-        />
-
-        <button
-          type="button"
-          onClick={() => void handleLogin()}
-          disabled={loading}
-        >
-          {loading ? 'Signing in...' : 'Sign in'}
-        </button>
-
-        {errorMessage && (
-          <p
-            style={{
-              margin: 0,
-              fontSize: '14px',
-            }}
-          >
-            {errorMessage}
-          </p>
-        )}
-      </div>
-    </div>
-  )
+  return <main className="entry-screen"><form className="entry-card" onSubmit={event => {
+    event.preventDefault()
+    if (!loading) void handleLogin()
+  }}>
+    <img src="/favicon.png" alt="" className="entry-icon" />
+    <h1>SamdoList</h1>
+    <label>Email<input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} /></label>
+    <label>Password<input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /></label>
+    {errorMessage && <p role="alert">{errorMessage}</p>}
+    <button className="primary-action" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
+  </form></main>
 }
