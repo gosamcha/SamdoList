@@ -1,147 +1,98 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useRef, useState } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { useLiveQuery } from 'dexie-react-hooks'
-
 import DailyPlannerPage from './pages/DailyPlannerPage'
-import WeeklySummaryPage from './pages/WeeklySummaryPage'
 import LoginScreen from './components/LoginScreen'
-
 import { db } from './db'
 import { supabase } from './lib/supabase'
-import { getPlannerDate } from './utils/time'
-import { startRealtimeSync, syncCloudSnapshotToLocal } from './lib/realtimeSync'
+import { addDays, getPlannerDate, startOfWeekMonday } from './utils/time'
+import { openPlannerSync, plannerWindow } from './lib/realtimeSync'
 import { startLocalChangeSync } from './lib/localSync'
 
-type PageName = 'daily' | 'weekly'
+const WeeklySummaryPage = lazy(() => import('./pages/WeeklySummaryPage'))
 
-function App() {
-  const [page, setPage] = useState<PageName>('daily')
-  const [selectedDate, setSelectedDate] = useState<string | null>(null)
-
-  const [session, setSession] = useState<Session | null>(null)
-  const [authLoading, setAuthLoading] = useState(true)
-  const [cloudReady, setCloudReady] = useState(false)
-
+function Loading({ done, total, label }: { done?: number; total?: number; label: string }) {
+  const [seconds, setSeconds] = useState(0)
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      setSession(data.session)
-      setAuthLoading(false)
-    })
-
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, newSession) => {
-      setSession(newSession)
-    })
-
-    return () => {
-      subscription.unsubscribe()
-    }
+    const start = performance.now()
+    const timer = window.setInterval(() => setSeconds(Math.floor((performance.now() - start) / 1000)), 500)
+    return () => clearInterval(timer)
   }, [])
+  return <main className="mx-auto mt-[30vh] max-w-sm px-6">
+    <h1 className="text-lg font-bold">{label}</h1>
+    <progress aria-label={label} value={done} max={total} className="my-3 w-full accent-indigo-500" />
+    <p className="text-sm text-neutral-500">{total ? done + ' / ' + total + ' 단계 · ' : ''}{seconds}초 경과</p>
+  </main>
+}
 
-  const dayStart = useLiveQuery(async () => {
-    const result = await db.settings.get('dayStart')
-    return result?.value ?? '08:00'
-  }, [])
-
-  // 앱에 처음 접속했을 때만 DayStart 기준으로 첫 날짜를 결정함.
-  // 예: DayStart가 08:00이면 08/05 02:00 접속 시 08/04 페이지를 엶.
-  useEffect(() => {
-    if (
-      !cloudReady ||
-      dayStart === undefined ||
-      selectedDate !== null
-    ) {
-      return
-    }
-
-    setSelectedDate(
-      getPlannerDate(new Date(), dayStart),
-    )
-  }, [cloudReady, dayStart, selectedDate])
+function Planner({ userId }: { userId: string }) {
+  const [page, setPage] = useState<'daily' | 'weekly'>('daily')
+  const [date, setDate] = useState('')
+  const [sync, setSync] = useState<ReturnType<typeof openPlannerSync>>()
+  const covered = useRef(new Set<string>())
+  const [retry, setRetry] = useState(0)
+  const [progress, setProgress] = useState({ done: 0, total: 0 })
+  const [error, setError] = useState(false)
+  const [offline, setOffline] = useState(false)
+  const [readyWeek, setReadyWeek] = useState('')
+  const week = date && startOfWeekMonday(date)
 
   useEffect(() => {
-    const userId = session?.user.id
-
-    if (!userId) {
-      setCloudReady(false)
-      return
-    }
-
-    let cancelled = false
-
-    /*
-    * Realtime을 먼저 켜기
-    * 그다음 현재 Supabase 전체 상태를 가져오면
-    * snapshot을 가져오는 도중 발생하는 변경도
-    * Realtime으로 받을 수 있음.
-    */
-    const stopRealtimeSync =
-      startRealtimeSync(userId)
-
-    const initializeCloud = async () => {
-      try {
-        await syncCloudSnapshotToLocal(userId)
-      } catch (error) {
-        console.error(
-          '초기 클라우드 동기화 실패:',
-          error,
-        )
-      } finally {
-        if (!cancelled) {
-          setCloudReady(true)
-        }
-      }
-    }
-
-    void initializeCloud()
-
-    return () => {
-      cancelled = true
-      stopRealtimeSync()
-    }
-  }, [session?.user.id])
-
-  useEffect(() => {
-  if (!session?.user.id) return
-
     startLocalChangeSync()
-  }, [session?.user.id])
+    const connection = openPlannerSync(userId)
+    setSync(connection)
+    return () => connection.close()
+  }, [userId])
 
-  if (authLoading) {
-    return null
+  useEffect(() => {
+    if (!sync || offline || (week && covered.current.has(week))) return
+    let active = true
+    setError(false)
+    async function load() {
+      const initial = covered.current.size === 0
+      const target = week || getPlannerDate(new Date(), (await db.settings.get('dayStart'))?.value)
+      const range = plannerWindow(target, initial ? 2 : 0)
+      await sync!.load(range, initial, (done, total) => {
+        if (active) setProgress({ done, total })
+      })
+      if (!active) return
+      for (let monday = range.start; monday <= range.end; monday = addDays(monday, 7)) {
+        covered.current.add(monday)
+      }
+      const selected = week || getPlannerDate(new Date(), (await db.settings.get('dayStart'))?.value)
+      if (!active) return
+      if (!week) setDate(selected)
+      setReadyWeek(startOfWeekMonday(selected))
+    }
+    void load().catch(err => {
+      if (active) { console.error(err); setError(true) }
+    })
+    return () => { active = false }
+  }, [sync, week, retry, offline])
+
+  if (error && !offline) return <main className="mx-auto mt-[30vh] max-w-sm space-y-4 px-6">
+    <p>클라우드 기록을 불러오지 못했어요.</p>
+    <button onClick={() => { setError(false); setRetry(n => n + 1) }}>다시 시도</button>
+    <button className="ml-4" onClick={async () => {
+      if (!date) setDate(getPlannerDate(new Date(), (await db.settings.get('dayStart'))?.value))
+      setOffline(true)
+    }}>기기에 저장된 기록 열기</button>
+  </main>
+  if (!offline && (!readyWeek || !covered.current.has(week))) {
+    return <Loading {...progress} label={progress.total && progress.done === progress.total - 1 ? '기기에 저장하는 중' : '플래너 기록 불러오는 중'} />
   }
+  const navigate = (next: string) => { if (next) setDate(next) }
+  if (page === 'weekly') return <Suspense fallback={<Loading label="주간 화면 여는 중" />}>
+    <WeeklySummaryPage selectedDate={date} onSelectedDateChange={navigate} onOpenDaily={() => setPage('daily')} />
+  </Suspense>
+  return <DailyPlannerPage selectedDate={date} onSelectedDateChange={navigate} onOpenWeekly={() => setPage('weekly')} />
+}
 
-  if (!session) {
-    return <LoginScreen />
-  } 
-
-  if (!cloudReady) {
-    return null
-  }
-
-  if (selectedDate === null) {
-    return null
-  }
-
-  if (page === 'weekly') {
-    return (
-      <WeeklySummaryPage
-        selectedDate={selectedDate}
-        onSelectedDateChange={setSelectedDate}
-        onOpenDaily={() => setPage('daily')}
-      />
-    )
-  }
-
-return (
-  <>
-    <DailyPlannerPage
-      selectedDate={selectedDate}
-      onSelectedDateChange={setSelectedDate}
-      onOpenWeekly={() => setPage('weekly')}
-    />
-  </>
-) }
-
-export default App
+export default function App() {
+  const [session, setSession] = useState<Session | null | undefined>(undefined)
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((_event, value) => setSession(value))
+    return () => data.subscription.unsubscribe()
+  }, [])
+  if (session === undefined) return <Loading label="로그인 확인 중" />
+  return session ? <Planner key={session.user.id} userId={session.user.id} /> : <LoginScreen />
+}

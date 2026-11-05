@@ -1,3 +1,5 @@
+import Dexie, { type Transaction } from 'dexie'
+import { addDays, startOfWeekMonday } from '../utils/time'
 import { db } from '../db'
 import {
   CAPTURE_HIDDEN_CATEGORY_IDS_KEY,
@@ -76,10 +78,10 @@ type CloudTemplate = {
  * "Supabase에서 받아온 변경을 다시 Supabase에 올려버리는 현상"
  * 을 막을 때 사용함.
  */
-let applyingRemoteChange = false
+const remoteTransactions = new WeakSet<Transaction>()
 
 export function isApplyingRemoteChange() {
-  return applyingRemoteChange
+  return !!Dexie.currentTransaction && remoteTransactions.has(Dexie.currentTransaction)
 }
 
 function parseStringArray(value: string) {
@@ -98,19 +100,19 @@ function parseStringArray(value: string) {
 
 async function findCategoryBySyncId(syncId: string) {
   return db.categories
-    .filter((category) => category.syncId === syncId)
+    .where('syncId').equals(syncId)
     .first()
 }
 
 async function findTaskBySyncId(syncId: string) {
   return db.tasks
-    .filter((task) => task.syncId === syncId)
+    .where('syncId').equals(syncId)
     .first()
 }
 
 async function findTemplateBySyncId(syncId: string) {
   return db.dayTemplates
-    .filter((template) => template.syncId === syncId)
+    .where('syncId').equals(syncId)
     .first()
 }
 
@@ -415,105 +417,98 @@ async function deleteLocalItem(row: SyncItem) {
   }
 }
 
-/*
- * 실시간 구독 시작
- */
-export function startRealtimeSync(userId: string) {
-  const channel = supabase
-    .channel(`samdolist-sync-${userId}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'sync_items',
-        filter: `user_id=eq.${userId}`,
-      },
-      async (payload) => {
-        /*
-         * 우리는 실제 DELETE 대신 deleted_at을 사용하는 방식이므로
-         * INSERT / UPDATE의 new 데이터를 주로 사용함.
-         */
-        if (
-          payload.eventType !== 'INSERT' &&
-          payload.eventType !== 'UPDATE'
-        ) {
-          return
-        }
+type DateWindow = { start: string; end: string }
 
-        const row = payload.new as unknown as SyncItem
-
-        try {
-          applyingRemoteChange = true
-
-          await applyCloudItem(row)
-        } catch (error) {
-          console.error(
-            'Realtime 데이터를 로컬에 반영하지 못했어.',
-            error,
-          )
-        } finally {
-          applyingRemoteChange = false
-        }
-      },
-    )
-    .subscribe((status) => {
-      console.log('SamdoList realtime:', status)
-    })
-
-  return () => {
-    void supabase.removeChannel(channel)
-  }
+export function plannerWindow(date: string, surroundingWeeks: number): DateWindow {
+  const monday = startOfWeekMonday(date)
+  return { start: addDays(monday, -7 * surroundingWeeks), end: addDays(monday, 6 + 7 * surroundingWeeks) }
 }
 
-export async function syncCloudSnapshotToLocal(
-  userId: string,
-) {
-  const { data, error } = await supabase
-    .from('sync_items')
-    .select(
-      'id, user_id, collection, item_key, data, updated_at, deleted_at',
-    )
-    .eq('user_id', userId)
+export function openPlannerSync(userId: string) {
+  const controller = new AbortController()
+  let initialEvents: SyncItem[] | null = []
+  const liveVersions = new Map<string, string>()
+  const keyOf = (row: SyncItem) => row.collection + '/' + row.item_key
+  const apply = (rows: SyncItem[], live = false) =>
+    db.transaction('rw', db.tables, async transaction => {
+      remoteTransactions.add(transaction)
+      for (const row of rows) {
+        if (controller.signal.aborted) throw new DOMException('Connection closed', 'AbortError')
+        const key = keyOf(row)
+        const known = liveVersions.get(key)
+        if (known && known > row.updated_at) continue
+        await applyCloudItem(row)
+        if (live) liveVersions.set(key, row.updated_at)
+      }
+    })
 
-  if (error) {
-    throw error
-  }
+  const channel = supabase.channel('samdolist-sync-' + userId)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'sync_items', filter: 'user_id=eq.' + userId }, payload => {
+      if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+        const row = payload.new as SyncItem
+        if (initialEvents) initialEvents.push(row)
+        else void apply([row], true).catch(console.error)
+      }
+    }).subscribe()
 
-  const rows = (data ?? []) as SyncItem[]
-
-  /*
-   * 카테고리가 먼저 생성되어야
-   * Task / Template의 categorySyncId를
-   * 현재 기기의 categoryId로 변환할 수 있음.
-   */
-  const priority: Record<string, number> = {
-    categories: 0,
-    settings: 1,
-    tasks: 2,
-    records: 3,
-    dayTemplates: 4,
-    weeklyRecords: 5,
-  }
-
-  rows.sort((a, b) => {
-    return (
-      (priority[a.collection] ?? 99) -
-      (priority[b.collection] ?? 99)
-    )
-  })
-
-  try {
-    applyingRemoteChange = true
-
-    for (const row of rows) {
-      await applyCloudItem(row)
+  async function fetchGroup(collections: string[], dates?: DateWindow, keys?: string[]) {
+    const rows: SyncItem[] = []
+    let cursor = ''
+    for (;;) {
+      let query = supabase.from('sync_items').select('id,collection,item_key,data,updated_at,deleted_at')
+        .eq('user_id', userId).in('collection', collections)
+      if (dates) {
+        const field = collections[0] === 'tasks' ? 'data->>date' : 'item_key'
+        query = query.gte(field, dates.start).lte(field, dates.end)
+      }
+      if (keys) query = query.in('item_key', keys)
+      if (cursor) query = query.gt('id', cursor)
+      const { data, error } = await query.order('id').limit(250).abortSignal(controller.signal)
+      if (error) throw error
+      const page = data as SyncItem[]
+      rows.push(...page)
+      if (page.length < 250) return rows
+      cursor = page[page.length - 1].id
     }
-
-    console.log(
-      `SamdoList startup sync: ${rows.length} items`,
-    )
-  } finally {
-    applyingRemoteChange = false
   }
+
+  async function load(dates: DateWindow, initial: boolean, progress: (done: number, total: number) => void) {
+    let done = 0
+    const total = initial ? 6 : 4
+    progress(done, total)
+    const step = async (request: Promise<SyncItem[]>) => {
+      const rows = await request
+      progress(++done, total)
+      return rows
+    }
+    const history = { start: addDays(dates.start, -1), end: addDays(dates.end, 1) }
+    const [categories, shared, tasks, records, weeks] = await Promise.all([
+      initial ? step(fetchGroup(['categories'])) : [],
+      initial ? step(fetchGroup(['settings', 'dayTemplates'])) : [],
+      step(fetchGroup(['tasks'], dates)),
+      step(fetchGroup(['records'], history)),
+      step(fetchGroup(['weeklyRecords'], dates)),
+    ])
+    // A cached task may have moved outside this window on another device.
+    const found = new Set(tasks.map(row => row.item_key))
+    const cached = await db.tasks.where('date').between(dates.start, dates.end, true, true).toArray()
+    const missing = cached.flatMap(task => task.syncId && !found.has(task.syncId) ? [task.syncId] : [])
+    for (let i = 0; i < missing.length; i += 50) {
+      tasks.push(...await fetchGroup(['tasks'], undefined, missing.slice(i, i + 50)))
+    }
+    await apply([...categories, ...shared, ...tasks, ...records, ...weeks])
+    if (initialEvents) {
+      const events = initialEvents
+      initialEvents = null
+      // Ignore changes already included in the initial snapshot.
+      const snapshot = new Map([...categories, ...shared, ...tasks, ...records, ...weeks].map(row => [keyOf(row), row.updated_at]))
+      await apply(events.filter(row => row.updated_at > (snapshot.get(keyOf(row)) ?? "")), true)
+    }
+    progress(++done, total)
+  }
+
+  return { load, close() {
+    controller.abort()
+    void supabase.removeChannel(channel)
+  } }
 }

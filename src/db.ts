@@ -128,6 +128,11 @@ class SamdoListDB extends Dexie {
         }
       })
 
+    this.version(5).stores({
+      categories: "++id,name,syncId",
+      tasks: "++id,date,categoryId,status,createdAt,syncId",
+      dayTemplates: "++id,&name,updatedAt,syncId",
+    })
   }
 }
 

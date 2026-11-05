@@ -48,3 +48,8 @@ button {
   font-weight: 600;
   color: #c1c5cd;
 }
+@media (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]), textarea, select, [contenteditable="true"] {
+    font-size: 16px !important;
+  }
+}

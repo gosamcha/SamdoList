@@ -93,6 +93,7 @@ function DailyPlannerPage({
   const [draft, setDraft] = useState<TaskDraft | null>(null)
   const [dailyMemo, setDailyMemo] = useState('')
 
+  const lastAdded = useRef<{ date: string; end: string; savedAt: number } | null>(null)
   const dateInputRef = useRef<HTMLInputElement>(null)
   const captureRef = useRef<HTMLDivElement>(null)
   const [captureSaving, setCaptureSaving] = useState(false)
@@ -408,6 +409,7 @@ function moveDate(amount: number) {
         status: 'todo',
         createdAt: Date.now(),
       })
+      lastAdded.current = endTime ? { date: selectedDate, end: endTime, savedAt: Date.now() } : null
     }
 
     setDraft(null)
@@ -429,8 +431,10 @@ function moveDate(amount: number) {
   function openNewTask(category: Category) {
     if (!category.id) return
 
-    const startTime = getCurrentFiveMinuteTime()
-    const endTime = addMinutesToTime(startTime, 30)
+    const previous = lastAdded.current
+    const consecutive = previous?.date === selectedDate && Date.now() - previous.savedAt < 5 * 60_000
+    const endTime = consecutive ? addMinutesToTime(previous.end, 30) : getCurrentFiveMinuteTime()
+    const startTime = addMinutesToTime(endTime, -30)
 
     setDraft({
       categoryId: category.id,
@@ -1071,7 +1075,7 @@ function moveDate(amount: number) {
           <div
             className={clsx(
               'mt-3 grid gap-3',
-              visibleTabCount === 2 ? 'grid-cols-2' : 'grid-cols-1',
+              visibleTabCount === 2 ? 'grid-cols-2 md:grid-cols-[3fr_2fr]' : 'grid-cols-1',
             )}
           >
             {showTimeTab && (
@@ -1087,6 +1091,10 @@ function moveDate(amount: number) {
 
             {showTodoTab && (
               <TodoPanel
+                compact={showTimeTab}
+                onDeleteTask={async (task) => {
+                  if (task.id && window.confirm("Delete “" + task.title + "”?")) await db.tasks.delete(task.id)
+                }}
                 categories={categories}
                 tasks={tasks}
                 dayStart={dayStart}

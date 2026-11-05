@@ -40,6 +40,8 @@ type TodoPanelProps = {
   foldedCategoryIds?: number[]
   onToggleCategoryFold?: (categoryId: number) => void | Promise<void>
   hiddenCategoryIds?: number[]
+  compact?: boolean
+  onDeleteTask?: (task: PlannerTask) => void
   captureMode?: boolean
 }
 
@@ -76,6 +78,8 @@ function TodoPanel({
   foldedCategoryIds = [],
   onToggleCategoryFold,
   hiddenCategoryIds = [],
+  compact = false,
+  onDeleteTask,
   captureMode = false,
 }: TodoPanelProps) {
   // 기존 CaptureView props와의 호환용. 정렬에는 사용하지 않음.
@@ -173,7 +177,7 @@ function TodoPanel({
         className={clsx(
           captureMode
             ? 'h-full overflow-hidden px-4 py-3.5'
-            : 'max-h-[72vh] overflow-auto p-3',
+            : compact ? 'max-h-[72vh] overflow-auto p-2 md:p-3' : 'max-h-[72vh] overflow-auto p-3',
         )}
       >
         {!captureMode && categories.length === 0 && (
@@ -249,7 +253,7 @@ function TodoPanel({
 
               {!isFolded &&
                 (categoryTasks.length === 0 ? (
-                  !captureMode && (
+                  !captureMode && !compact && (
                     <div className="rounded-xl border border-dashed border-neutral-200 p-4 text-sm text-neutral-400">
                       empty
                     </div>
@@ -265,9 +269,9 @@ function TodoPanel({
                   >
                     <div className="divide-y divide-neutral-200">
                       {categoryTasks.map((task) =>
-                        task.id === undefined ? (
+                        task.id === undefined || compact ? (
                           <TodoItem
-                            key={`task-${task.createdAt}`}
+                            key={task.id ?? `task-${task.createdAt}`}
                             task={task}
                             theme={theme}
                             onCycleStatus={onCycleStatus}
@@ -275,6 +279,8 @@ function TodoPanel({
                             todayDate={todayDate}
                             onMoveToTomorrow={onMoveToTomorrow}
                             onBringToToday={onBringToToday}
+                            compact={compact}
+                            onDeleteTask={onDeleteTask}
                             captureMode={captureMode}
                           />
                         ) : (
@@ -287,6 +293,8 @@ function TodoPanel({
                             todayDate={todayDate}
                             onMoveToTomorrow={onMoveToTomorrow}
                             onBringToToday={onBringToToday}
+                            compact={compact}
+                            onDeleteTask={onDeleteTask}
                             captureMode={captureMode}
                           />
                         ),
@@ -338,6 +346,8 @@ function TodoPanel({
                   todayDate={todayDate}
                   onMoveToTomorrow={onMoveToTomorrow}
                   onBringToToday={onBringToToday}
+                  compact={compact}
+                  onDeleteTask={onDeleteTask}
                   captureMode={captureMode}
                 />
               ))}
@@ -405,6 +415,8 @@ type TodoItemProps = {
   onMoveToTomorrow: (task: PlannerTask) => void | Promise<void>
   onBringToToday: (task: PlannerTask) => void | Promise<void>
 
+  compact?: boolean
+  onDeleteTask?: (task: PlannerTask) => void
   captureMode?: boolean
   dragHandle?: ReactNode
 }
@@ -468,6 +480,8 @@ function TodoItem({
   todayDate,
   onMoveToTomorrow,
   onBringToToday,
+  compact = false,
+  onDeleteTask,
   captureMode = false,
   dragHandle,
 }: TodoItemProps) {
@@ -478,7 +492,7 @@ function TodoItem({
       ? 'O'
       : task.status === 'partial'
         ? '△'
-        : ''
+        : compact ? 'X' : ''
 
   const statusColor =
     task.status === 'done'
@@ -496,7 +510,7 @@ function TodoItem({
   return (
     <div
       className={clsx(
-        'flex items-center',
+        'relative flex flex-wrap items-center',
         captureMode ? 'gap-3 py-2.5' : 'gap-2 py-2',
       )}
     >
@@ -504,6 +518,7 @@ function TodoItem({
 
       <button
         type="button"
+        aria-label={[task.title, task.status, "상태 변경"].join(" · ")}
         onClick={() => onCycleStatus(task)}
         className={clsx(
           'grid shrink-0 place-items-center font-extrabold',
@@ -524,12 +539,12 @@ function TodoItem({
         onClick={() => onEditTask(task)}
         className={clsx(
           'min-w-0 flex-1 rounded-xl text-left hover:bg-neutral-100',
-          captureMode ? 'px-2 py-1.5' : 'px-2 py-1',
+          captureMode ? 'px-2 py-1.5' : compact ? 'py-1' : 'px-2 py-1',
         )}
       >
         <div
           className={clsx(
-            'truncate font-bold leading-tight',
+            compact ? 'break-words font-bold leading-snug' : 'truncate font-bold leading-tight',
             captureMode ? 'text-[20px]' : 'text-sm',
             task.status === 'partial' && 'text-neutral-600',
           )}
@@ -537,7 +552,7 @@ function TodoItem({
           {task.title}
         </div>
 
-        {timeText && (
+        {!compact && timeText && (
           <div
             className={clsx(
               'font-semibold text-neutral-400',
@@ -551,8 +566,8 @@ function TodoItem({
         )}
       </button>
 
-      {!captureMode && (
-        <div className="relative shrink-0">
+      {!compact && !captureMode && (
+        <div className="shrink-0">
           <button
             type="button"
             onClick={() => setMenuOpen((prev) => !prev)}
@@ -572,13 +587,13 @@ function TodoItem({
           >
             ⋯
           </button>
-
-          {menuOpen && (
+        </div>
+      )}
+      {!compact && !captureMode && menuOpen && (
+        <div className="basis-full flex justify-end">
             <div
               className="
-                absolute
-                right-0
-                top-10
+                relative
                 z-40
                 w-44
                 overflow-hidden
@@ -609,6 +624,13 @@ function TodoItem({
                 → Tomorrow
               </button>
 
+              {onDeleteTask && (
+                <button type="button" className="w-full px-4 py-2.5 text-left text-sm font-bold text-red-600 hover:bg-red-50" onClick={() => {
+                  setMenuOpen(false)
+                  onDeleteTask(task)
+                }}>Delete</button>
+              )}
+
               {task.date !== todayDate && (
                 <button
                   type="button"
@@ -630,7 +652,6 @@ function TodoItem({
                 </button>
               )}
             </div>
-          )}
         </div>
       )}
     </div>
