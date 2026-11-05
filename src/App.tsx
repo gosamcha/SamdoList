@@ -1,4 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { useLiveQuery } from 'dexie-react-hooks'
+import { DEFAULT_THEME, THEME_SETTING_KEYS } from './plannerTypes'
 import type { Session } from '@supabase/supabase-js'
 import DailyPlannerPage from './pages/DailyPlannerPage'
 import LoginScreen from './components/LoginScreen'
@@ -19,7 +21,7 @@ function Loading({ done, total, label }: { done?: number; total?: number; label:
   }, [])
   return <main className="entry-screen"><section className="entry-card" aria-live="polite"><img src="/favicon.png" alt="" className="entry-icon" /><h1>SamdoList</h1>
     <p>{label}</p>
-    <progress aria-label={label} value={done} max={total} className="my-3 w-full accent-indigo-500" />
+    <progress aria-label={label} value={done} max={total} className="my-3 w-full" />
     <p className="text-sm text-neutral-500">{total ? done + ' / ' + total + ' steps · ' : ''}{seconds}s elapsed</p>
   </section></main>
 }
@@ -88,6 +90,14 @@ function Planner({ userId }: { userId: string }) {
 }
 
 export default function App() {
+  const accent = useLiveQuery(() => db.settings.bulkGet([THEME_SETTING_KEYS.primaryBg, THEME_SETTING_KEYS.primaryText, THEME_SETTING_KEYS.statusTodo, THEME_SETTING_KEYS.statusDone]), [])
+  useEffect(() => {
+    const style = document.documentElement.style
+    style.setProperty('--main-theme', accent?.[0]?.value || DEFAULT_THEME.primaryBg)
+    style.setProperty('--check-empty', accent?.[2]?.value || DEFAULT_THEME.statusTodo)
+    style.setProperty('--check-done', accent?.[3]?.value || DEFAULT_THEME.statusDone)
+    style.setProperty('--main-theme-text', accent?.[1]?.value || DEFAULT_THEME.primaryText)
+  }, [accent])
   const [session, setSession] = useState<Session | null | undefined>(undefined)
   useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((_event, value) => setSession(value))

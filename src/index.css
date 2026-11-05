@@ -54,18 +54,18 @@ button {
   }
 }
 
-.entry-screen { min-height:100svh; display:grid; place-items:center; padding:24px; background:radial-gradient(ellipse at 50% 26%,#efedf9,transparent 62%),#f6f6f8; }
+.entry-screen { min-height:100svh; display:grid; place-items:center; padding:24px; background:radial-gradient(ellipse at 50% 26%,color-mix(in srgb,var(--main-theme,#bdbbf0) 18%,white),transparent 62%),#f6f6f8; }
 .entry-card { display:grid; gap:16px; width:min(100%,365px); background:white; border:1px solid #e5e4eb; border-radius:26px; padding:34px; box-shadow:0 12px 40px #38315409; }
 .entry-card h1 { font-size:32px; font-weight:850; letter-spacing:-.055em; line-height:1.1; margin-bottom:6px; }
 .entry-icon { width:48px; height:48px; object-fit:cover; border-radius:14px; }
 .entry-card label,.deadline-card h2,.time-dialog h2 { font-weight:750; }
 .entry-card label { display:grid; gap:6px; font-size:14px; }
 .entry-card input,.deadline-card input { width:100%; min-width:0; border:1px solid #dedde5; border-radius:11px; padding:9px 12px; background:#fbfbfd; }
-.entry-card progress { width:100%; height:8px; border:none; border-radius:8px; overflow:hidden; accent-color:#aaa6df; }
+.entry-card progress { width:100%; height:8px; border:none; border-radius:8px; overflow:hidden; accent-color:var(--main-theme,#bdbbf0); }
 .entry-card progress::-webkit-progress-bar { background:#eeeef4; }
-.entry-card progress::-webkit-progress-value { background:#aaa6df; border-radius:8px; }
-.entry-card progress:indeterminate { background:linear-gradient(90deg,#e9e8f3,#b5b1e6,#e9e8f3); }
-.primary-action,.entry-card button { border-radius:12px; background:#dddaf6; color:#37334e; font-weight:750; padding:10px 16px; }
+.entry-card progress::-webkit-progress-value { background:var(--main-theme,#bdbbf0); border-radius:8px; }
+.entry-card progress:indeterminate { background:linear-gradient(90deg,color-mix(in srgb,var(--main-theme,#bdbbf0) 12%,white),var(--main-theme,#bdbbf0),color-mix(in srgb,var(--main-theme,#bdbbf0) 12%,white)); }
+.primary-action,.entry-card button { border-radius:12px; background:var(--main-theme,#bdbbf0); color:var(--main-theme-text,white); font-weight:900; padding:10px 16px; }
 .primary-action:disabled { opacity:.55; }
 .time-trigger { display:block; margin-top:4px; width:100%; border:1px solid #dedee5; background:#fafafa; border-radius:10px; padding:5px 7px; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .time-trigger:disabled { opacity:.5; }
@@ -75,20 +75,17 @@ button {
 .time-dialog legend { font-size:13px; font-weight:700; color:#625e70; margin-bottom:6px; }
 .time-options { display:grid; grid-template-columns:repeat(6,1fr); gap:4px; }
 .time-options button { border-radius:8px; background:#f6f5f8; min-height:34px; font-variant-numeric:tabular-nums; }
-.time-options [aria-pressed=true] { background:#dddaf6; color:#352e60; font-weight:800; }
+.time-options [aria-pressed=true] { background:var(--main-theme,#bdbbf0); color:var(--main-theme-text,white); font-weight:800; }
 .time-dialog footer { display:flex; align-items:center; justify-content:flex-end; gap:14px; font-size:14px; }
 .time-dialog footer button:first-child:not(:nth-last-child(2)) { margin-right:auto; }
 .todo-state { display:grid; place-items:center; width:30px; height:32px; flex:none; }
-.todo-state span { width:20px; height:20px; border:1px solid #a4a4a4; border-radius:4px; background:transparent; }
-.todo-state.is-compact { width:28px; height:28px; }
-.todo-state.is-compact span { width:14px; height:14px; border-radius:3px; }
-.todo-state.is-capture { width:46px; height:46px; }
-.todo-state.is-capture span { width:32px; height:32px; }
-.todo-state [data-status=done], .todo-state [data-status=partial] {
-  border-color:color-mix(in srgb,currentColor 62%,transparent);
-  background-color:color-mix(in srgb,currentColor 19%,transparent);
-}
-.todo-state [data-status=partial] { color:#a3a3a3; }
+.todo-state .state-box { display:grid;place-items:center;width:20px;height:20px;border:1px solid currentColor;border-radius:4px;line-height:1; }
+.todo-state .state-box:not([data-status=todo]) { background:currentColor; }
+.state-check { color:white;font-size:14px; }
+.state-symbol { display:none; }
+.todo-state.is-capture,.todo-state.is-capture .state-box { width:46px;height:46px; }
+.todo-state.is-capture .state-box { background:transparent;border:3px solid currentColor;border-radius:15px; }
+.is-capture .state-symbol { display:block;font-size:19px; }
 .todo-title { user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
 .todo-title[aria-pressed=true] { cursor:grabbing; }
 .deadline-card,.sleep-summary { border:1px solid #e5e5e5; background:white; border-radius:20px; padding:16px; }
@@ -98,8 +95,8 @@ button {
 .deadline-card form button { flex-shrink:0; }
 .deadline-card li { padding:9px 0; font-size:14px; overflow-wrap:anywhere; }
 .deadline-card time { display:block; font-size:12px; }
-.deadline-toggle { display:grid; place-items:center; width:20px; height:20px; flex-shrink:0; border:1px solid #aaa; border-radius:6px; }
-.deadline-toggle[aria-pressed=true] { background:#e4e1f8; }
+.deadline-toggle { display:grid; place-items:center; width:20px; height:20px; flex-shrink:0; border:1px solid var(--check-empty,#a3a3a3); border-radius:6px; }
+.deadline-toggle[aria-pressed=true] { border-color:var(--check-done);background:var(--check-done);color:white; }
 @media(max-width:480px) {
   .planner-header { gap:4px; }
   .planner-header > button { padding:6px; }
@@ -107,7 +104,7 @@ button {
   .planner-header > div:first-child > button { width:24px; }
 }
 
-.deadline-dot { width:10px;height:10px;border-radius:50%;background:#bdbbf0; }
+.deadline-dot { width:10px;height:10px;border-radius:50%;background:var(--main-theme,#bdbbf0); }
 .deadline-card header button { display:grid;place-items:center;min-width:28px;height:28px; }
 .deadline-card header button + button { margin-left:0; }
 .deadline-card li > div > span { font-weight:600; }
@@ -119,7 +116,7 @@ button {
   .planner-header { flex-wrap:wrap;gap:2px;color:#5e5c65;margin-bottom:16px; }
   .planner-header > div:first-child { flex:1 0 100%;justify-content:flex-start;gap:6px; }
   .planner-header > div:first-child > button { width:19px; }
-  .planner-header .date-main { color:#302e37;font-size:34px;font-weight:700; }
+  .planner-header .date-main { color:inherit;font-size:34px;font-weight:700; }
   .planner-header .date-weekday { font-size:14px;color:#8f8998; }
   .planner-header > button { border:0;padding:5px;border-radius:4px; }
   .planner-header > button:hover,.deadline-card header button:hover { background:#f5f4f7; }
@@ -212,25 +209,17 @@ button {
 }
 
 @media (width < 1200px) {
-  .planner-todos .todo-state {
-    width:36px;
-    height:36px;
+  .planner-todos .todo-state { width:36px;height:36px; }
+  .planner-todos .is-compact { margin-inline-end:8px; }
+  .planner-todos .is-compact .state-box { width:24px;height:24px; }
+  .planner-todos .todo-state:not(.is-compact) .state-box {
+    width:36px;height:36px;border:2px solid currentColor;border-radius:12px;background:transparent;
   }
-  .planner-todos .todo-state.is-compact { margin-inline-end:8px; }
-  .planner-todos .todo-state span {
-    display:grid;
-    place-items:center;
-    width:36px;
-    height:36px;
-    border:2px solid currentColor;
-    border-radius:12px;
-    background:transparent;
-    font-size:14px;
-    font-weight:800;
-    line-height:1;
-  }
-  .planner-todos .todo-state [data-status=done]::after { content:"O"; }
-  .planner-todos .todo-state [data-status=partial]::after { content:"△"; }
-  .planner-todos .todo-state [data-status=todo] { color:#a3a3a3; }
+  .planner-todos .todo-state:not(.is-compact) .state-symbol { display:block;font-size:14px; }
+  .planner-todos .todo-state:not(.is-compact) .state-check { display:none; }
   .planner-todos .todo-title > div:first-child { font-size:14px; }
 }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline-color:var(--main-theme,#bdbbf0); }
+input[type=checkbox],input[type=radio] { accent-color:var(--check-done,#918deb); }
+
+button.action-label, .time-dialog footer button, .time-options [aria-pressed=true] { font-weight:900; }

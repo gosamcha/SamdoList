@@ -469,7 +469,7 @@ function SortableTodoItem(props: TodoItemProps) {
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
-        backgroundColor: isDragging ? "#f3f2fa" : undefined,
+        backgroundColor: isDragging ? "#f4f4f4" : undefined,
         boxShadow: isDragging ? "0 3px 12px #302a471f" : undefined,
         position: 'relative',
         zIndex: isDragging ? 20 : undefined,
@@ -512,7 +512,7 @@ function TodoItem({
     <div
       className={clsx(
         'relative flex flex-wrap items-center',
-        captureMode ? 'gap-3 py-2.5' : compact ? 'gap-0' : 'gap-2 py-2',
+        captureMode ? 'gap-3 py-2.5' : compact ? 'gap-0 py-1' : 'gap-2 py-2',
       )}
     >
 
@@ -521,9 +521,14 @@ function TodoItem({
         aria-label={[task.title, task.status, "CHANGE STATUS"].join(" · ")}
         onClick={() => onCycleStatus(task)}
         className={clsx('todo-state', compact && 'is-compact', captureMode && 'is-capture')}
-        style={{color: theme.statusDone}}
+        style={{ color: task.status === 'done' ? theme.statusDone : task.status === 'partial' ? theme.statusPartial : theme.statusTodo }}
       >
-        <span data-status={task.status} aria-hidden="true" />
+        <span className="state-box" data-status={task.status} aria-hidden="true">
+          {task.status !== 'todo' && <>
+            <b className="state-symbol">{task.status === 'done' ? 'O' : '△'}</b>
+            {!captureMode && <b className="state-check">✓</b>}
+          </>}
+        </span>
       </button>
 
       <button
@@ -626,7 +631,7 @@ function TodoItem({
                 </button>
               ))}
               {onDeleteTask && (
-                <button type="button" className="w-full px-4 py-2.5 text-left text-sm font-bold text-red-600 hover:bg-red-50" onClick={() => {
+                <button type="button" className="action-label w-full px-4 py-2.5 text-left text-sm font-bold text-red-600 hover:bg-red-50" onClick={() => {
                   setMenuOpen(false)
                   onDeleteTask(task)
                 }}>DELETE</button>

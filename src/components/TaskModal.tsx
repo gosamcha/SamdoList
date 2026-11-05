@@ -179,7 +179,7 @@ function TaskModal({
             <button
               type="button"
               onClick={onDelete}
-              className="rounded-xl border border-red-200 px-4 py-3 font-black text-red-500"
+              className="action-label rounded-xl border border-red-200 px-4 py-3 font-black text-red-500"
             >
               {draft.editingId ? 'DELETE' : 'CANCEL'}
             </button>
@@ -187,7 +187,7 @@ function TaskModal({
             <button
               type="button"
               onClick={onSave}
-              className="rounded-xl px-4 py-3 font-black"
+              className="action-label rounded-xl px-4 py-3 font-black"
               style={{
                 backgroundColor: theme.primaryBg,
                 color: theme.primaryText,

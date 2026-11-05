@@ -194,7 +194,7 @@ function MenuDrawer({
             />
 
             <ColorSetting
-              label="Check Box"
+              label="Check X (Empty)"
               value={theme.statusTodo}
               onChange={(value) =>
                 updateThemeColor(THEME_SETTING_KEYS.statusTodo, value)
@@ -267,7 +267,7 @@ function MenuDrawer({
                     type="button"
                     disabled={habits!.length >= 4 || !newHabitName.trim()}
                     onClick={() => void addWeeklyHabit()}
-                    className="rounded-xl px-4 py-2 text-sm font-black disabled:opacity-40"
+                    className="action-label rounded-xl px-4 py-2 text-sm font-black disabled:opacity-40"
                     style={{
                       backgroundColor: theme.primaryBg,
                       color: theme.primaryText,
@@ -297,7 +297,7 @@ function MenuDrawer({
                         <button
                           type="button"
                           onClick={() => void onDeleteHabit!(habit.id)}
-                          className="rounded-xl border border-red-200 px-3 py-2 text-xs font-black text-red-500"
+                          className="action-label rounded-xl border border-red-200 px-3 py-2 text-xs font-black text-red-500"
                         >
                           DELETE
                         </button>
@@ -412,7 +412,7 @@ function MenuDrawer({
                 await onSaveTemplate!(templateName)
                 setTemplateName('')
               }}
-              className="w-full rounded-xl px-4 py-3 font-black"
+              className="action-label w-full rounded-xl px-4 py-3 font-black"
               style={{
                 backgroundColor: theme.primaryBg,
                 color: theme.primaryText,
@@ -449,7 +449,7 @@ function MenuDrawer({
                           await onApplyTemplate!(template)
                           onClose()
                         }}
-                        className="rounded-xl px-3 py-2 text-sm font-black"
+                        className="action-label rounded-xl px-3 py-2 text-sm font-black"
                         style={{
                           backgroundColor: theme.primaryBg,
                           color: theme.primaryText,
@@ -463,7 +463,7 @@ function MenuDrawer({
                         onClick={() =>
                           void onDeleteTemplate!(template.id)
                         }
-                        className="rounded-xl border border-red-200 px-3 py-2 text-sm font-black text-red-500"
+                        className="action-label rounded-xl border border-red-200 px-3 py-2 text-sm font-black text-red-500"
                       >
                         DELETE
                       </button>
@@ -496,7 +496,7 @@ function MenuDrawer({
           <button
             type="button"
             onClick={addCategory}
-            className="mb-4 w-full rounded-xl px-4 py-3 font-black"
+            className="action-label mb-4 w-full rounded-xl px-4 py-3 font-black"
             style={{
               backgroundColor: theme.primaryBg,
               color: theme.primaryText,
@@ -566,7 +566,7 @@ function MenuDrawer({
                   <button
                     type="button"
                     onClick={() => deleteCategory(category.id)}
-                    className="flex-1 rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-500"
+                    className="action-label flex-1 rounded-xl border border-red-200 px-3 py-2 text-sm font-bold text-red-500"
                   >
                     DELETE
                   </button>

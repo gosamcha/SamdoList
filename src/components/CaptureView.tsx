@@ -535,6 +535,7 @@ function CaptureView({
                   tasks={tasks}
                   records={records}
                   captureMode
+                  currentTimeColor={theme.primaryBg}
                   hourHeight={42}
                   extraLaneHeight={26}
                   captureTargetHeight={timePanelHeight}
