@@ -223,3 +223,5 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline-colo
 input[type=checkbox],input[type=radio] { accent-color:var(--check-done,#918deb); }
 
 button.action-label, .time-dialog footer button, .time-options [aria-pressed=true] { font-weight:900; }
+
+.todo-options-popup button { font-weight:700; }

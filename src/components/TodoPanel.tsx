@@ -1,4 +1,5 @@
-import { useMemo, type ReactNode, type ComponentPropsWithRef, useState } from 'react'
+import { useLayoutEffect, useRef, useMemo, type ReactNode, type ComponentPropsWithRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown } from 'lucide-react'
 import clsx from 'clsx'
 import {
@@ -501,6 +502,44 @@ function TodoItem({
   onStep, canMoveUp, canMoveDown,
 }: TodoItemProps) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const menuButtonRef = useRef<HTMLButtonElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
+  const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 })
+
+  useLayoutEffect(() => {
+    if (!menuOpen) return
+    const trigger = menuButtonRef.current
+    const menu = menuRef.current
+    if (!trigger || !menu) return
+    const anchor = trigger.getBoundingClientRect()
+    const bounds = menu.getBoundingClientRect()
+    const top = anchor.bottom + 4 + bounds.height <= window.innerHeight - 8
+      ? anchor.bottom + 4 : anchor.top - bounds.height - 4
+    setMenuPosition({
+      top: Math.max(8, top),
+      left: Math.max(8, Math.min(anchor.right - bounds.width, window.innerWidth - bounds.width - 8)),
+    })
+    const dismissOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !menu.contains(event.target) && !trigger.contains(event.target)) setMenuOpen(false)
+    }
+    const dismiss = () => setMenuOpen(false)
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setMenuOpen(false); trigger.focus() }
+    }
+    const scroll = (event: Event) => {
+      if (!(event.target instanceof Node) || !menu.contains(event.target)) dismiss()
+    }
+    document.addEventListener('pointerdown', dismissOutside)
+    document.addEventListener('keydown', escape)
+    window.addEventListener('resize', dismiss)
+    window.addEventListener('scroll', scroll, true)
+    return () => {
+      document.removeEventListener('pointerdown', dismissOutside)
+      document.removeEventListener('keydown', escape)
+      window.removeEventListener('resize', dismiss)
+      window.removeEventListener('scroll', scroll, true)
+    }
+  }, [menuOpen])
 
   const timeText = task.startTime
     ? task.endTime
@@ -582,13 +621,15 @@ function TodoItem({
               hover:text-neutral-700
             "
             aria-label="Todo options"
+            ref={menuButtonRef}
+            aria-expanded={menuOpen}
           >
             ⋯
           </button>
         </div>
       )}
-      {!compact && !captureMode && menuOpen && (
-        <div className="basis-full flex justify-end">
+      {!compact && !captureMode && menuOpen && createPortal(
+        <div ref={menuRef} className="todo-options-popup" style={{ position: 'fixed', zIndex: 1000, ...menuPosition, maxWidth: 'calc(100vw - 16px)', maxHeight: 'calc(100dvh - 16px)', overflowY: 'auto' }}>
             <div
               className="
                 relative
@@ -658,7 +699,7 @@ function TodoItem({
                 </button>
               )}
             </div>
-        </div>
+        </div>, document.body
       )}
     </div>
   )

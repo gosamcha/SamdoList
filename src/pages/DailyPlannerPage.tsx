@@ -1,4 +1,5 @@
 import DailyTrackers from '../components/DailyTrackers'
+import FocusTimer from '../components/FocusTimer'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ListChecks, CalendarRange, ChevronLeft, ChevronRight, ImageDown, Menu } from 'lucide-react'
 import { useLiveQuery } from 'dexie-react-hooks'
@@ -1052,6 +1053,7 @@ function moveDate(amount: number) {
           </div>
         </div>
 
+        <FocusTimer key={userId} userId={userId} categories={categories} theme={theme} dayStart={dayStart} onSaved={onSelectedDateChange} />
         {desktop && <>
           <DeadlineList userId={userId} mobile={false} close={() => {}} /></>}
         </aside>
